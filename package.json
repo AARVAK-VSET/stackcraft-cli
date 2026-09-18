@@ -1,0 +1,64 @@
+{
+  "name": "stackcraft-cli",
+  "version": "1.0.0",
+  "description": "Interactive CLI to scaffold modern full-stack web applications in seconds",
+  "type": "module",
+  "main": "./bin/stackcraft.js",
+  "bin": {
+    "stackcraft": "./bin/stackcraft.js"
+  },
+  "files": [
+    "bin/",
+    "index.js",
+    "commands/",
+    "utils/",
+    "templates/"
+  ],
+  "keywords": [
+    "stackcraft",
+    "cli",
+    "scaffold",
+    "fullstack",
+    "mern",
+    "mevn",
+    "mean",
+    "t3-stack",
+    "hono",
+    "react",
+    "vue",
+    "angular",
+    "express"
+  ],
+  "author": "AARVAK-VSET <contact@aarvak.org>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AARVAK-VSET/stackcraft-cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/AARVAK-VSET/stackcraft-cli/issues"
+  },
+  "homepage": "https://github.com/AARVAK-VSET/stackcraft-cli#readme",
+  "license": "MIT",
+  "dependencies": {
+    "@octokit/rest": "^22.0.0",
+    "@pinecone-database/pinecone": "^6.1.2",
+    "boxen": "^8.0.1",
+    "chalk": "^5.6.0",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "figlet": "^1.8.2",
+    "fs-extra": "^11.3.1",
+    "gradient-string": "^3.0.0",
+    "inquirer": "^12.9.4",
+    "log-symbols": "^7.0.1",
+    "node-fetch": "^3.3.2",
+    "ora": "^8.2.0"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "validate": "node scripts/validate-apis.js"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}
