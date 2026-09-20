@@ -6,7 +6,7 @@ const OWNER =
   process.env.GITHUB_REPOSITORY?.split("/")[0] || process.env.GITHUB_OWNER;
 const REPO =
   process.env.GITHUB_REPOSITORY?.split("/")[1] || process.env.GITHUB_REPO;
-const ISSUE_NUMBER = Number(process.env.ISSUE_NUMBER);
+const ISSUE_NUMBER = Number(process.env.ISSUE_NUMBER?.trim().replace(/^#/, ""));
 
 // Initialize Pinecone client
 const pinecone = new Pinecone({
