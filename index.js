@@ -3,6 +3,7 @@ import chalk from "chalk";
 import gradient from "gradient-string";
 import figlet from "figlet";
 import { createProject } from "./commands/scaffold.js";
+import { validateProjectName, validateConfig } from "./utils/validator.js";
 
 function showBanner() {
   console.log(
@@ -18,7 +19,7 @@ function showBanner() {
   console.log(chalk.gray("   Open-Source by AARVAK-VSET | Patch Wars 2026\n"));
 }
 
-console.log("\n")
+console.log("\n");
 
 async function askStackQuestions() {
   return await inquirer.prompt([
@@ -34,8 +35,7 @@ async function askStackQuestions() {
         { name: chalk.bold.cyan("MEVN") + " → MongoDB + Express + Vue.js + Node.js", value: "mevn" },
         { name: chalk.bold.yellow("MEVN") + " + Tailwind + Auth", value: "mevn+tailwind+auth" },
         { name: chalk.bold.yellow("Next.js") + " + tRPC + Prisma + Tailwind + Auth", value: "t3-stack" },
-        { name: chalk.bold.red("Hono") + " → Hono + Prisma + React", value: "hono" }
-
+        { name: chalk.bold.red("Hono") + " → Hono + Prisma + React", value: "hono" },
       ],
       pageSize: 10,
       default: "mern",
@@ -61,12 +61,8 @@ async function askProjectName() {
       name: "projectName",
       message: chalk.cyan("📦 Enter your project name:"),
       validate: (input) => {
-        if (!input.trim()) return chalk.red("Project name is required!");
-        if (!/^[a-zA-Z0-9-_]+$/.test(input)) {
-          return chalk.red(
-            "Only letters, numbers, hyphens, and underscores are allowed."
-          );
-        }
+        const result = validateProjectName(input);
+        if (!result.valid) return chalk.red(result.error);
         return true;
       },
     },
@@ -83,14 +79,25 @@ async function main() {
   try {
     if (!projectName) {
       projectName = await askProjectName();
+    } else {
+      const nameValidation = validateProjectName(projectName);
+      if (!nameValidation.valid) {
+        console.log(chalk.red("❌ Error:"), nameValidation.error);
+        process.exit(1);
+      }
     }
+
     const stackAnswers = await askStackQuestions();
     config = { ...stackAnswers, projectName };
-    
+
+    const configValidation = validateConfig(config);
+    if (!configValidation.valid) {
+      console.log(chalk.red("❌ Validation Error:"), configValidation.error);
+      process.exit(1);
+    }
 
     console.log(chalk.yellow("\n🚀 Creating your project...\n"));
     await createProject(projectName, config);
-
   } catch (err) {
     console.log(chalk.red("❌ Error:"), err.message);
     process.exit(1);
