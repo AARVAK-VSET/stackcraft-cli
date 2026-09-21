@@ -77,7 +77,12 @@ async function main() {
   let config;
 
   try {
-    if (!projectName) {
+    if (projectName) {
+      if (!/^[a-zA-Z0-9-_]+$/.test(projectName)) {
+        console.log(chalk.red("Error: Invalid project name. Only letters, numbers, hyphens, and underscores are allowed. Path traversal operators are rejected."));
+        process.exit(1);
+      }
+    } else {
       projectName = await askProjectName();
     } else {
       const nameValidation = validateProjectName(projectName);
