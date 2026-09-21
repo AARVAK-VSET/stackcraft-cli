@@ -1,10 +1,44 @@
-# 🤖 Database Management Workflows
+# 🔄 StackCraft Workflows
+
+Welcome to the StackCraft CLI workflow guide. This document outlines how to use the CLI for your applications, how to contribute to the tool itself, and (for maintainers) how to manage our internal infrastructure.
+
+## 🚀 End-User Scaffolding Workflow
+
+Getting started with StackCraft CLI is designed to be frictionless. Follow these steps to scaffold a new application:
+
+1. **Run the CLI**: You can use `npx` to run StackCraft without global installation:
+   ```bash
+   npx stackcraft my-awesome-app
+   ```
+2. **Select your Stack**: Follow the interactive prompts to choose your preferred architecture (MERN, MEAN, MEVN, T3, Hono).
+3. **Start Developing**: Navigate into your new project, install dependencies, and start the development server.
+
+## 💻 Developer Contribution Workflow
+
+Want to add a new feature or fix a bug in StackCraft CLI? Here is the standard contribution workflow:
+
+1. **Setup**: Fork and clone the repository, then install dependencies:
+   ```bash
+   git clone https://github.com/AARVAK-VSET/stackcraft-cli.git
+   cd stackcraft-cli
+   npm install
+   ```
+2. **Test Locally**: Use `npm link` to test the CLI commands globally on your local machine:
+   ```bash
+   npm link
+   stackcraft test-app
+   ```
+3. **Submit Changes**: Commit your changes and open a Pull Request. Be sure to reference the relevant issue number in the description (e.g., `Fixes #7`).
+
+---
+
+## 🤖 Internal Bot Maintenance (Maintainers Only)
+
+*Note: The following infrastructure details are irrelevant to CLI consumers.*
 
 This repository includes several GitHub Actions workflows for managing your Pinecone vector database and duplicate detection system.
 
-## 📋 Available Workflows
-
-### 1. �️ Database Operations (Manual)
+### 1. ️ Database Operations (Manual)
 **File:** `.github/workflows/database-operations.yml`
 
 Pure database management operations - no validation mixed in.
@@ -52,25 +86,18 @@ Handles duplicate detection automatically and allows manual checks.
 **Manual triggers:**
 - Check any specific issue number for duplicates
 
-## 🎯 **Usage Examples:**
+### Usage Examples
 
-### **Recommended Workflow:**
+**Recommended Workflow:**
 1. **Validate APIs First:** Actions → API Validation → Choose "all-apis" → Run
 2. **Then Perform Operations:** Actions → Database Operations → Choose your operation
 
-### **Common Operations:**
-- **Validate APIs:** Actions → API Validation → Choose "all-apis" → Run
-- **Populate Issues:** Actions → Database Operations → Choose "populate-issues" → Run
-- **Clean Up Duplicates:** Actions → Database Operations → Choose "cleanup-duplicates" → ✅ Enable Force → Run
-- **Check Database Health:** Actions → Database Operations → Choose "debug-database" → Run
-- **Emergency Clear All:** Actions → Database Operations → Choose "clear-all-vectors" → ✅ Enable Force → Run
-
-## 🛠️ Local Scripts (npm commands)
+### Local Scripts (npm commands)
 
 You can also run these operations locally:
 
 ```bash
-# API Validation (NEW!)
+# API Validation
 npm run validate              # Test all API connections
 npm run validate:pinecone     # Test only Pinecone connection  
 npm run validate:github       # Test only GitHub connection
@@ -89,7 +116,7 @@ npm run cleanup-issue                 # Remove specific closed issue
 npm run clear-all:force              # ⚠️ Delete ALL vectors
 ```
 
-## 🔐 Required Secrets
+### Required Secrets
 
 Make sure these secrets are configured in your repository:
 
@@ -97,62 +124,3 @@ Make sure these secrets are configured in your repository:
 - `GEMINI_API_KEY` - Your Google Gemini API key
 - `PINECONE_API_KEY` - Your Pinecone API key
 - `PINECONE_INDEX` - Your Pinecone index name
-
-## 🚨 Safety Features
-
-- **Force flags required** for destructive operations
-- **Confirmation prompts** in scripts
-- **Continue-on-error** for non-critical operations
-- **Detailed logging** for troubleshooting
-- **Verification steps** after dangerous operations
-
-## 📊 Workflow Status
-
-Check the **Actions** tab to see:
-- ✅ Successful operations
-- ❌ Failed operations with detailed logs
-- 📋 Summary reports for each run
-
-## 🆘 Troubleshooting
-
-### Common Issues:
-
-1. **API Rate Limits**
-   - Wait a few minutes and retry
-   - Check the logs for specific error messages
-
-2. **Connection Failures**
-   - Use "Test Connection" in Quick Actions
-   - Verify your API keys are correct
-
-3. **Database Issues**
-   - Use "Debug Database" to check current state
-   - Check Pinecone dashboard for index status
-
-4. **Permission Errors**
-   - Ensure GitHub token has `issues: write` permission
-   - Check repository secrets are properly set
-
-### Getting Help:
-
-1. Check workflow logs for detailed error messages
-2. Use the debug tools to understand current state
-3. Run test connections to verify API access
-4. Check this README for common solutions
-
-## 🎯 Best Practices
-
-1. **Regular Maintenance:**
-   - Run "Populate Issues" after major issue imports
-   - Use "Debug Status" to monitor database health
-   - Clean up duplicates periodically
-
-2. **Before Major Operations:**
-   - Always run "Debug Database" first
-   - Test connections to ensure APIs are working
-   - Have a backup plan (you can repopulate from scratch)
-
-3. **Safety First:**
-   - Never use force flags unless you understand the consequences
-   - Test operations in a development environment first
-   - Keep your API keys secure and rotated regularly

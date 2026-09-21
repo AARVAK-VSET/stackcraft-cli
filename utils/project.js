@@ -4,14 +4,60 @@ import chalk from "chalk";
 import boxen from "boxen";
 import { logger } from "./logger.js";
 import { copyTemplates } from "./templateManager.js";
-import { HonoReactSetup,mernTailwindSetup, installDependencies, mernSetup, serverAuthSetup, serverSetup, mevnSetup } from "./installer.js";
-import { angularSetup, angularTailwindSetup } from "./installer.js";
+import { validateConfig } from "./validator.js";
+import {
+  HonoReactSetup,
+  mernTailwindSetup,
+  installDependencies,
+  mernSetup,
+  serverAuthSetup,
+  serverSetup,
+  mevnSetup,
+  angularSetup,
+  angularTailwindSetup,
+} from "./installer.js";
 
-export async function setupProject(projectName, config) {
-  const projectPath = path.join(process.cwd(), projectName);
-
+/**
+ * Asserts that the target project destination directory is available.
+ * Keeps filesystem state validation separate from configuration validation.
+ *
+ * @param {string} projectPath
+ * @param {string} projectName
+ */
+export function assertDestinationAvailable(projectPath, projectName) {
   if (fs.existsSync(projectPath)) {
-    logger.error(`❌ Directory ${chalk.red(projectName)} already exists`);
+    const err = new Error(`Directory "${projectName}" already exists`);
+    err.code = "EEXIST";
+    throw err;
+  }
+}
+
+/**
+ * Sets up a new project given project name and configuration options.
+ *
+ * @param {string} projectName
+ * @param {{ stack: string, language: string }} config
+ * @param {{ skipInstall?: boolean, targetDir?: string, silent?: boolean }} [options={}]
+ */
+export async function setupProject(projectName, config, options = {}) {
+  // 1. Pure configuration validation
+  const validation = validateConfig({ ...config, projectName });
+  if (!validation.valid) {
+    logger.error(`❌ Configuration Error: ${validation.error}`);
+    throw new Error(validation.error);
+  }
+
+  // 2. Target directory collision check
+  const baseDir = options.targetDir || process.cwd();
+  const projectPath = path.join(baseDir, projectName);
+
+  try {
+    assertDestinationAvailable(projectPath, projectName);
+  } catch (err) {
+    logger.error(`❌ ${err.message}`);
+    if (options.throwOnError || options.silent || process.env.NODE_ENV === "test") {
+      throw err;
+    }
     process.exit(1);
   }
 
@@ -69,6 +115,53 @@ export async function setupProject(projectName, config) {
     if(config.stack === "mean+tailwind+auth"){
       angularTailwindSetup(projectPath, config, projectName);
       installDependencies(projectPath, config, projectName);
+  }
+
+  // 4. Offline / skipInstall mode (bypasses heavy external package manager calls)
+  if (options.skipInstall) {
+    copyTemplates(projectPath, config);
+    return { projectPath, success: true };
+  }
+
+  // 5. Standard scaffolding & dependency installation
+  if (config.stack !== "mean" && config.stack !== "mean+tailwind+auth" && config.stack !== "hono") {
+    copyTemplates(projectPath, config);
+    installDependencies(projectPath, config, projectName);
+  }
+
+  if (config.stack === "mern+tailwind+auth") {
+    mernSetup(projectPath, config, projectName);
+    copyTemplates(projectPath, config);
+    mernTailwindSetup(projectPath, config, projectName);
+    installDependencies(projectPath, config, projectName);
+    serverAuthSetup(projectPath, config, projectName);
+  }
+
+  if (config.stack === "mevn") {
+    mevnSetup(projectPath, config, projectName);
+    copyTemplates(projectPath, config);
+    installDependencies(projectPath, config, projectName);
+    serverSetup(projectPath, config, projectName);
+  }
+
+  if (config.stack === "mean") {
+    angularSetup(projectPath, config);
+    installDependencies(projectPath, config, projectName);
+    copyTemplates(projectPath, config);
+    serverSetup(projectPath, config, projectName);
+  }
+
+  if (config.stack === "mean+tailwind+auth") {
+    angularTailwindSetup(projectPath, config, projectName);
+    installDependencies(projectPath, config, projectName);
+    copyTemplates(projectPath, config);
+  }
+
+  if (config.stack === "hono") {
+    try {
+      HonoReactSetup(projectPath, config, projectName);
+      installDependencies(projectPath, config, projectName, false);
+    } catch {
       copyTemplates(projectPath, config);
     }
     

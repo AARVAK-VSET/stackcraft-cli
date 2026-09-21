@@ -1,12 +1,20 @@
-import { execSync } from "child_process";
+import { execSync, spawnSync } from "child_process";
 import { logger } from "./logger.js";
 import path from "path";
 import fs from "fs";
 
-export function installDependencies(projectPath, config, projectName,server=true,dependencies=[]) {
+export function installDependencies(projectPath, config, projectName, server=true, dependencies=[]) {
   logger.info("📦 Installing dependencies...");
 
   try {
+    // Validate package names against shell metacharacters
+    const isValidPackage = (pkg) => /^[a-zA-Z0-9\-_\.@^~:]+$/.test(pkg);
+    for (const dep of dependencies) {
+      if (!isValidPackage(dep)) {
+        throw new Error(`Invalid package name rejected: ${dep}`);
+      }
+    }
+
     const clientDir = fs.existsSync(path.join(projectPath, "client"))
       ? path.join(projectPath, "client")
       : path.join(projectPath, "client");
@@ -15,11 +23,13 @@ export function installDependencies(projectPath, config, projectName,server=true
       ? path.join(projectPath, "server")
       : path.join(projectPath, "server");
 
+    const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
+
     if (fs.existsSync(clientDir)) {
-      execSync("npm install", { cwd: clientDir, stdio: "inherit", shell: true });
+      spawnSync(npmCmd, ["install"], { cwd: clientDir, stdio: "inherit", shell: false });
     }
     if (server && fs.existsSync(serverDir)) {
-      execSync("npm install " + dependencies.join(" "), { cwd: serverDir, stdio: "inherit", shell: true });
+      spawnSync(npmCmd, ["install", ...dependencies], { cwd: serverDir, stdio: "inherit", shell: false });
     }
 
     logger.info("✅ Dependencies installed successfully");
