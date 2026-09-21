@@ -113,13 +113,13 @@ export function HonoReactSetup(projectPath, config, projectName) {
     // 1. Create React project (inside projectPath)
     if(config.language==="typescript"){
 
-      execSync(`npm create vite@latest client -- --t react-ts --no-rolldown --no-interactive `, {
+      execSync(`npm create vite@latest client -- --template react-ts --no-interactive `, {
         cwd: projectPath,
         stdio: "inherit",
         shell: true,
       });
     }else{
-      execSync(`npm create vite@latest client -- --t react --no-rolldown --no-interactive `, {
+      execSync(`npm create vite@latest client -- --template react --no-interactive `, {
         cwd: projectPath,
         stdio: "inherit",
         shell: true,
@@ -147,13 +147,13 @@ export function mernSetup(projectPath, config, projectName) {
     // 1. Create MERN project
     if(config.language==="typescript"){
 
-      execSync(`npm create vite@latest client -- --t react-ts --no-rolldown --no-interactive `, {
+      execSync(`npm create vite@latest client -- --template react-ts --no-interactive `, {
         cwd: projectPath,
         stdio: "inherit",
         shell: true,
       });
     }else{
-      execSync(`npm create vite@latest client -- --t react --no-rolldown --no-interactive `, {
+      execSync(`npm create vite@latest client -- --template react --no-interactive `, {
         cwd: projectPath,
         stdio: "inherit",
         shell: true,
@@ -341,12 +341,12 @@ export function mevnSetup(projectPath,config,projectName){
   try {
     logger.info("⚡ Setting up MEVN...");
     if(config.language=='javascript'){
-      execSync(`npm create vite@latest client -- --t vue --no-rolldown --no-interactive`, { cwd: projectPath, stdio: "inherit", shell: true });
+      execSync(`npm create vite@latest client -- --template vue --no-interactive`, { cwd: projectPath, stdio: "inherit", shell: true });
 
 
     }
     else{
-      execSync(`npm create vite@latest client -- --t vue-ts --no-rolldown --no-interactive`, { cwd: projectPath, stdio: "inherit", shell: true });
+      execSync(`npm create vite@latest client -- --template vue-ts --no-interactive`, { cwd: projectPath, stdio: "inherit", shell: true });
     }
 
     
