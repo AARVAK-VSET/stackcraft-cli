@@ -1,9 +1,95 @@
-import { execSync, spawnSync } from "child_process";
-import { logger } from "./logger.js";
+import { spawn } from "child_process";
+import ora from "ora";
 import path from "path";
 import fs from "fs";
+import { logger } from "./logger.js";
 
-export function installDependencies(projectPath, config, projectName, server=true, dependencies=[]) {
+// Active child process tracker for SIGINT / SIGTERM signal handling
+export const activeProcesses = new Set();
+let signalHandlersRegistered = false;
+
+export function registerSignalHandlers() {
+  if (signalHandlersRegistered) return;
+  signalHandlersRegistered = true;
+
+  const handleSignal = (signal) => {
+    logger.error(`\nReceived ${signal}. Gracefully cleaning up active worker processes...`);
+    cleanupActiveProcesses();
+    process.exit(130);
+  };
+
+  process.on("SIGINT", () => handleSignal("SIGINT"));
+  process.on("SIGTERM", () => handleSignal("SIGTERM"));
+}
+
+export function cleanupActiveProcesses() {
+  for (const child of activeProcesses) {
+    try {
+      if (!child.killed) {
+        child.kill("SIGTERM");
+        child.kill("SIGKILL");
+      }
+    } catch {
+      // ignore cleanup errors on dead processes
+    }
+  }
+  activeProcesses.clear();
+}
+
+/**
+ * Asynchronously spawns a command with interactive progress feedback (ora spinner)
+ * and graceful process cancellation tracking.
+ */
+export function spawnAsync(command, args = [], options = {}) {
+  registerSignalHandlers();
+  const { spinnerText, cwd, env, shell = false } = options;
+
+  let spinner = null;
+  const isTest = process.env.NODE_ENV === "test";
+
+  if (spinnerText && !isTest) {
+    spinner = ora(spinnerText).start();
+  }
+
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd,
+      env: { ...process.env, ...env },
+      shell,
+      stdio: isTest ? "pipe" : ["ignore", "pipe", "pipe"],
+    });
+
+    activeProcesses.add(child);
+
+    let stderrData = "";
+    if (child.stderr) {
+      child.stderr.on("data", (chunk) => {
+        stderrData += chunk.toString();
+      });
+    }
+
+    child.on("error", (err) => {
+      activeProcesses.delete(child);
+      if (spinner) spinner.fail(`Failed: ${spinnerText || command}`);
+      reject(err);
+    });
+
+    child.on("close", (code) => {
+      activeProcesses.delete(child);
+      if (code === 0) {
+        if (spinner) spinner.succeed();
+        resolve({ code, stdout: "", stderr: stderrData });
+      } else {
+        if (spinner) spinner.fail(`Failed with exit code ${code}: ${spinnerText || command}`);
+        const err = new Error(`Command failed with exit code ${code}: ${command} ${args.join(" ")}\n${stderrData}`);
+        err.code = code;
+        reject(err);
+      }
+    });
+  });
+}
+
+export async function installDependencies(projectPath, config = {}, projectName = "", server = true, dependencies = []) {
   logger.info("📦 Installing dependencies...");
 
   try {
@@ -15,21 +101,21 @@ export function installDependencies(projectPath, config, projectName, server=tru
       }
     }
 
-    const clientDir = fs.existsSync(path.join(projectPath, "client"))
-      ? path.join(projectPath, "client")
-      : path.join(projectPath, "client");
-    
-    const serverDir = fs.existsSync(path.join(projectPath, "server"))
-      ? path.join(projectPath, "server")
-      : path.join(projectPath, "server");
-
+    const clientDir = path.join(projectPath, "client");
+    const serverDir = path.join(projectPath, "server");
     const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
 
     if (fs.existsSync(clientDir)) {
-      spawnSync(npmCmd, ["install"], { cwd: clientDir, stdio: "inherit", shell: false });
+      await spawnAsync(npmCmd, ["install"], {
+        cwd: clientDir,
+        spinnerText: `Installing client dependencies for ${projectName || "project"}...`,
+      });
     }
     if (server && fs.existsSync(serverDir)) {
-      spawnSync(npmCmd, ["install", ...dependencies], { cwd: serverDir, stdio: "inherit", shell: false });
+      await spawnAsync(npmCmd, ["install", ...dependencies], {
+        cwd: serverDir,
+        spinnerText: `Installing server dependencies for ${projectName || "project"}...`,
+      });
     }
 
     logger.info("✅ Dependencies installed successfully");
@@ -39,17 +125,19 @@ export function installDependencies(projectPath, config, projectName, server=tru
   }
 }
 
-
-export function angularSetup(projectPath, config, projectName) {
+export async function angularSetup(projectPath, config, projectName) {
   logger.info("⚡ Setting up Angular...");
 
   try {
-    // Create Angular project (no Tailwind)
-    execSync(`npx -y @angular/cli new client --style=css --skip-git --skip-install`, {
-      cwd: projectPath,
-      stdio: "inherit",
-      shell: true, // fixes ENOENT
-    });
+    const npxCmd = process.platform === "win32" ? "npx.cmd" : "npx";
+    await spawnAsync(
+      npxCmd,
+      ["-y", "@angular/cli", "new", "client", "--style=css", "--skip-git", "--skip-install"],
+      {
+        cwd: projectPath,
+        spinnerText: "Setting up Angular client...",
+      }
+    );
 
     logger.info("✅ Angular project created successfully!");
   } catch (error) {
@@ -58,45 +146,33 @@ export function angularSetup(projectPath, config, projectName) {
   }
 }
 
-export function angularTailwindSetup(projectPath, config, projectName) {
+export async function angularTailwindSetup(projectPath, config, projectName) {
   logger.info("⚡ Setting up Angular + Tailwind...");
 
   try {
-    // 1. Create Angular project (inside projectPath)
-    execSync(`npx -y @angular/cli new client --style css`, {
+    const npxCmd = process.platform === "win32" ? "npx.cmd" : "npx";
+    const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
+
+    await spawnAsync(npxCmd, ["-y", "@angular/cli", "new", "client", "--style", "css"], {
       cwd: projectPath,
-      stdio: "inherit",
-      shell: true,
+      spinnerText: "Scaffolding Angular application...",
     });
 
     const clientPath = path.join(projectPath, "client");
 
-    // 2. Install Tailwind + PostCSS
-    execSync(`npm install tailwindcss @tailwindcss/postcss postcss --force`, {
+    await spawnAsync(npmCmd, ["install", "tailwindcss", "@tailwindcss/postcss", "postcss", "--force"], {
       cwd: clientPath,
-      stdio: "inherit",
-      shell: true,
+      spinnerText: "Installing Tailwind CSS and PostCSS...",
     });
 
-    // 3. Create tailwind.config.js
     const tailwindConfigPath = path.join(clientPath, ".postcssrc.json");
-
     fs.writeFileSync(
       tailwindConfigPath,
-      `{
-  "plugins": {
-    "@tailwindcss/postcss": {}
-  }
-}`
+      `{\n  "plugins": {\n    "@tailwindcss/postcss": {}\n  }\n}`
     );
 
-    // 4. Update styles.css with Tailwind directives
     const stylesPath = path.join(clientPath, "src/styles.css");
-    fs.writeFileSync(
-      stylesPath,
-      `@import "tailwindcss";\n`
-
-    );
+    fs.writeFileSync(stylesPath, `@import "tailwindcss";\n`);
 
     logger.info("✅ Angular + Tailwind setup completed!");
   } catch (error) {
@@ -105,161 +181,99 @@ export function angularTailwindSetup(projectPath, config, projectName) {
   }
 }
 
-
-export function HonoReactSetup(projectPath, config, projectName) {
-  logger.info("⚡ Setting up Hono+ React...");
+export async function HonoReactSetup(projectPath, config, projectName) {
+  logger.info("⚡ Setting up Hono + React...");
 
   try {
-    // 1. Create React project (inside projectPath)
-    if(config.language==="typescript"){
+    const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
 
-      execSync(`npm create vite@latest client -- --template react-ts --no-interactive `, {
+    const clientTemplate = config?.language === "typescript" ? "react-ts" : "react";
+    await spawnAsync(
+      npmCmd,
+      ["create", "vite@latest", "client", "--", "--template", clientTemplate, "--no-interactive"],
+      {
         cwd: projectPath,
-        stdio: "inherit",
-        shell: true,
-      });
-    }else{
-      execSync(`npm create vite@latest client -- --template react --no-interactive `, {
-        cwd: projectPath,
-        stdio: "inherit",
-        shell: true,
-      });
+        spinnerText: `Creating React client (${clientTemplate})...`,
+      }
+    );
 
-    }
-    
-    execSync(`npm create hono@latest server -- --template cloudflare-workers --pm npm `, {
-      cwd: projectPath,
-      stdio: "inherit",
-      shell: true,
-    });
+    await spawnAsync(
+      npmCmd,
+      ["create", "hono@latest", "server", "--", "--template", "cloudflare-workers", "--pm", "npm"],
+      {
+        cwd: projectPath,
+        spinnerText: "Creating Hono server...",
+      }
+    );
 
     logger.info("Created Hono + React Project !");
   } catch (error) {
-    logger.error("❌ Failed to set up Hono + react Project using cli");
+    logger.error("❌ Failed to set up Hono + React project using CLI");
     throw error;
   }
 }
 
-export function mernSetup(projectPath, config, projectName) {
+export async function mernSetup(projectPath, config, projectName) {
   logger.info("⚡ Setting up MERN...");
 
   try {
-    // 1. Create MERN project
-    if(config.language==="typescript"){
+    const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
 
-      execSync(`npm create vite@latest client -- --template react-ts --no-interactive `, {
+    const clientTemplate = config?.language === "typescript" ? "react-ts" : "react";
+    await spawnAsync(
+      npmCmd,
+      ["create", "vite@latest", "client", "--", "--template", clientTemplate, "--no-interactive"],
+      {
         cwd: projectPath,
-        stdio: "inherit",
-        shell: true,
-      });
-    }else{
-      execSync(`npm create vite@latest client -- --template react --no-interactive `, {
-        cwd: projectPath,
-        stdio: "inherit",
-        shell: true,
-      });
+        spinnerText: `Creating React client with Vite (${clientTemplate})...`,
+      }
+    );
 
-    }
-
-    if(config.language == 'javascript'){
-
-      
+    if (config?.language === "javascript") {
       const appJsxPath = path.join(projectPath, "client", "src", "App.jsx");
-      const appCssPath = path.join(projectPath,"client", "src", "index.css");
-      
-      let appJsx = fs.readFileSync(appJsxPath, "utf-8");
-      const lines = appJsx.split("\n");
-      
-      for (let i = 0; i < lines.length; i++) {
-        if (lines[i].includes("</>")) {
-          // inject badge right after opening fragment
-          lines.splice(i, 0, `  <div className="powered-badge">Powered by <span className="stackcraft">StackCraft</span></div>`);
-          break;
+      const appCssPath = path.join(projectPath, "client", "src", "index.css");
+
+      if (fs.existsSync(appJsxPath)) {
+        let appJsx = fs.readFileSync(appJsxPath, "utf-8");
+        const lines = appJsx.split("\n");
+        for (let i = 0; i < lines.length; i++) {
+          if (lines[i].includes("</>")) {
+            lines.splice(i, 0, `  <div className="powered-badge">Powered by <span className="stackcraft">StackCraft</span></div>`);
+            break;
+          }
         }
+        fs.writeFileSync(appJsxPath, lines.join("\n"), "utf-8");
       }
-      
-      fs.writeFileSync(appJsxPath, lines.join("\n"), "utf-8");
-      
-    // append the fu*king CSS
-    const badgeCSS = `
-    .powered-badge {
-      position: fixed;
-      bottom: 1.5rem;
-      left: 1.5rem;
-      font-size: 0.875rem;
-      background-color: black;
-      color: white;
-      padding: 0.5rem 1rem;
-      border-radius: 0.75rem;
-      box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1),
-      0 4px 6px -2px rgba(0,0,0,0.05);
-      opacity: 0.8;
-      transition: opacity 0.2s ease-in-out;
-      }
-      
-      .powered-badge:hover {
-      opacity: 1;
-      }
-      
-      .powered-badge .stackcraft {
-        font-weight: 600;
-        color: #4ade80;
-        }
-        `;
-        
+
+      const badgeCSS = `\n.powered-badge {\n  position: fixed;\n  bottom: 1.5rem;\n  left: 1.5rem;\n  font-size: 0.875rem;\n  background-color: black;\n  color: white;\n  padding: 0.5rem 1rem;\n  border-radius: 0.75rem;\n  box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1),\n  0 4px 6px -2px rgba(0,0,0,0.05);\n  opacity: 0.8;\n  transition: opacity 0.2s ease-in-out;\n}\n.powered-badge:hover {\n  opacity: 1;\n}\n.powered-badge .stackcraft {\n  font-weight: 600;\n  color: #4ade80;\n}\n`;
+      if (fs.existsSync(appCssPath)) {
         fs.appendFileSync(appCssPath, badgeCSS, "utf-8");
-        
+      }
     }
 
-    if(config.language=="typescript"){
+    if (config?.language === "typescript") {
       const appTsxPath = path.join(projectPath, "client", "src", "App.tsx");
-      const appCssPath = path.join(projectPath,"client", "src", "index.css");
-      
-      let appTsx = fs.readFileSync(appTsxPath, "utf-8");
-      const lines = appTsx.split("\n");
-      
-      for (let i = 0; i < lines.length; i++) {
-        if (lines[i].includes("</>")) {
-          // inject badge right after opening fragment
-          lines.splice(i, 0, `  <div className="powered-badge">Powered by <span className="stackcraft">StackCraft</span></div>`);
-          break;
+      const appCssPath = path.join(projectPath, "client", "src", "index.css");
+
+      if (fs.existsSync(appTsxPath)) {
+        let appTsx = fs.readFileSync(appTsxPath, "utf-8");
+        const lines = appTsx.split("\n");
+        for (let i = 0; i < lines.length; i++) {
+          if (lines[i].includes("</>")) {
+            lines.splice(i, 0, `  <div className="powered-badge">Powered by <span className="stackcraft">StackCraft</span></div>`);
+            break;
+          }
         }
+        fs.writeFileSync(appTsxPath, lines.join("\n"), "utf-8");
       }
-      
-      fs.writeFileSync(appTsxPath, lines.join("\n"), "utf-8");
-      
-    // append the fu*king CSS
-    const badgeCSS = `
-    .powered-badge {
-      position: fixed;
-      bottom: 1.5rem;
-      left: 1.5rem;
-      font-size: 0.875rem;
-      background-color: black;
-      color: white;
-      padding: 0.5rem 1rem;
-      border-radius: 0.75rem;
-      box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1),
-      0 4px 6px -2px rgba(0,0,0,0.05);
-      opacity: 0.8;
-      transition: opacity 0.2s ease-in-out;
-      }
-      
-      .powered-badge:hover {
-      opacity: 1;
-      }
-      
-      .powered-badge .stackcraft {
-        font-weight: 600;
-        color: #4ade80;
-        }
-        `;
-        
+
+      const badgeCSS = `\n.powered-badge {\n  position: fixed;\n  bottom: 1.5rem;\n  left: 1.5rem;\n  font-size: 0.875rem;\n  background-color: black;\n  color: white;\n  padding: 0.5rem 1rem;\n  border-radius: 0.75rem;\n  box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1),\n  0 4px 6px -2px rgba(0,0,0,0.05);\n  opacity: 0.8;\n  transition: opacity 0.2s ease-in-out;\n}\n.powered-badge:hover {\n  opacity: 1;\n}\n.powered-badge .stackcraft {\n  font-weight: 600;\n  color: #4ade80;\n}\n`;
+      if (fs.existsSync(appCssPath)) {
         fs.appendFileSync(appCssPath, badgeCSS, "utf-8");
-        
+      }
     }
 
-    serverSetup(projectPath,config,projectName);
+    await serverSetup(projectPath, config, projectName);
     logger.info("✅ MERN project created successfully!");
   } catch (error) {
     logger.error("❌ Failed to set up MERN");
@@ -267,21 +281,62 @@ export function mernSetup(projectPath, config, projectName) {
   }
 }
 
-export function serverSetup(projectPath,config,projectName){
-  try{
-    execSync(`npm init -y`, { cwd: path.join(projectPath, "server") });
-    installDependencies(projectPath,config,projectName,true,["dotenv","express","helmet","mongoose","cors","nodemon","morgan"])
+export async function serverSetup(projectPath, config, projectName) {
+  try {
+    const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
+    const serverDir = path.join(projectPath, "server");
+
+    if (!fs.existsSync(serverDir)) {
+      fs.mkdirSync(serverDir, { recursive: true });
+    }
+
+    await spawnAsync(npmCmd, ["init", "-y"], {
+      cwd: serverDir,
+      spinnerText: "Initializing Express server...",
+    });
+
+    await installDependencies(projectPath, config, projectName, true, [
+      "dotenv",
+      "express",
+      "helmet",
+      "mongoose",
+      "cors",
+      "nodemon",
+      "morgan",
+    ]);
     logger.info("✅ Server project created successfully!");
-  }catch(error){
+  } catch (error) {
     logger.error("❌ Failed to set up server");
     throw error;
   }
 }
 
-export function serverAuthSetup(projectPath,config,projectName){
+export async function serverAuthSetup(projectPath, config, projectName) {
   try {
-    execSync(`npm init -y`, { cwd: path.join(projectPath, "server") });
-    installDependencies(projectPath,config,projectName,true,["bcrypt","jsonwebtoken","cookie-parser","dotenv","express","helmet","mongoose","cors","nodemon","morgan"])
+    const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
+    const serverDir = path.join(projectPath, "server");
+
+    if (!fs.existsSync(serverDir)) {
+      fs.mkdirSync(serverDir, { recursive: true });
+    }
+
+    await spawnAsync(npmCmd, ["init", "-y"], {
+      cwd: serverDir,
+      spinnerText: "Initializing Express auth server...",
+    });
+
+    await installDependencies(projectPath, config, projectName, true, [
+      "bcrypt",
+      "jsonwebtoken",
+      "cookie-parser",
+      "dotenv",
+      "express",
+      "helmet",
+      "mongoose",
+      "cors",
+      "nodemon",
+      "morgan",
+    ]);
     logger.info("✅ Server Auth project created successfully!");
   } catch (error) {
     logger.error("❌ Failed to set up server auth");
@@ -289,135 +344,96 @@ export function serverAuthSetup(projectPath,config,projectName){
   }
 }
 
-export function mernTailwindSetup(projectPath, config, projectName) {
+export async function mernTailwindSetup(projectPath, config, projectName) {
   try {
-    execSync(`npm install tailwindcss @tailwindcss/vite`, { cwd: path.join(projectPath, "client") });
+    const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
+    const clientPath = path.join(projectPath, "client");
 
-    let isJs = config.language === 'javascript';
-    const viteConfigPath = isJs 
-      ? path.join(projectPath, "client", "vite.config.js") 
-      : path.join(projectPath, "client", "vite.config.ts");
-    
-    let viteConfigContent = fs.readFileSync(viteConfigPath, "utf-8");
+    await spawnAsync(npmCmd, ["install", "tailwindcss", "@tailwindcss/vite"], {
+      cwd: clientPath,
+      spinnerText: "Installing TailwindCSS for Vite...",
+    });
 
-    const indexCssPath = path.join(projectPath,"client","src","index.css")
-    let indexCssPathContent = fs.readFileSync(indexCssPath, "utf-8");
+    const isJs = config?.language === "javascript";
+    const viteConfigPath = isJs
+      ? path.join(clientPath, "vite.config.js")
+      : path.join(clientPath, "vite.config.ts");
 
-    indexCssPathContent = indexCssPathContent.replace(
-      /:root/g,
-      "@import 'tailwindcss';\n\n:root"
-    );
-    
+    if (fs.existsSync(viteConfigPath)) {
+      let viteConfigContent = fs.readFileSync(viteConfigPath, "utf-8");
+      viteConfigContent = viteConfigContent.replace(
+        /import \{ defineConfig \} from 'vite'/,
+        "import { defineConfig } from 'vite'\nimport tailwindcss from '@tailwindcss/vite'"
+      );
 
-    fs.writeFileSync(indexCssPath,indexCssPathContent)
-
-    // Add tailwindcss import
-    viteConfigContent = viteConfigContent.replace(
-      /import \{ defineConfig \} from 'vite'/,
-      "import { defineConfig } from 'vite'\nimport tailwindcss from '@tailwindcss/vite'"
-    );
-
-    // Add tailwindcss() to plugins
-    viteConfigContent = viteConfigContent.replace(
-      /plugins:\s*\[([^\]]*)\]/,
-      (match, pluginsInside) => {
-        if (!pluginsInside.includes("tailwindcss()")) {
-          return `plugins: [${pluginsInside.trim()} , tailwindcss()]`;
+      viteConfigContent = viteConfigContent.replace(
+        /plugins:\s*\[([^\]]*)\]/,
+        (match, pluginsInside) => {
+          if (!pluginsInside.includes("tailwindcss()")) {
+            return `plugins: [${pluginsInside.trim()} , tailwindcss()]`;
+          }
+          return match;
         }
-        return match; // avoid duplicate insert
-      }
-    );
+      );
 
-    fs.writeFileSync(viteConfigPath, viteConfigContent);
+      fs.writeFileSync(viteConfigPath, viteConfigContent);
+    }
 
-    console.log("✅ TailwindCSS added to Vite config");
+    const indexCssPath = path.join(clientPath, "src", "index.css");
+    if (fs.existsSync(indexCssPath)) {
+      let indexCssPathContent = fs.readFileSync(indexCssPath, "utf-8");
+      indexCssPathContent = indexCssPathContent.replace(
+        /:root/g,
+        "@import 'tailwindcss';\n\n:root"
+      );
+      fs.writeFileSync(indexCssPath, indexCssPathContent);
+    }
+
+    logger.info("✅ TailwindCSS added to Vite config");
   } catch (err) {
-    console.error("❌ Failed to setup Tailwind:", err.message);
+    logger.error(`❌ Failed to setup Tailwind: ${err.message}`);
   }
 }
 
-
-export function mevnSetup(projectPath,config,projectName){
+export async function mevnSetup(projectPath, config, projectName) {
   try {
     logger.info("⚡ Setting up MEVN...");
-    if(config.language=='javascript'){
-      execSync(`npm create vite@latest client -- --template vue --no-interactive`, { cwd: projectPath, stdio: "inherit", shell: true });
+    const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
 
+    const clientTemplate = config?.language === "javascript" ? "vue" : "vue-ts";
+    await spawnAsync(
+      npmCmd,
+      ["create", "vite@latest", "client", "--", "--template", clientTemplate, "--no-interactive"],
+      {
+        cwd: projectPath,
+        spinnerText: `Creating Vue client with Vite (${clientTemplate})...`,
+      }
+    );
 
-    }
-    else{
-      execSync(`npm create vite@latest client -- --template vue-ts --no-interactive`, { cwd: projectPath, stdio: "inherit", shell: true });
-    }
-
-    
     const vueJsPath = path.join(projectPath, "client", "src", "components", "HelloWorld.vue");
-  
-    let vueJsPathContent = fs.readFileSync(vueJsPath, "utf-8");
-  
-    vueJsPathContent = vueJsPathContent.replace(
-      /<p class="read-the-docs">Click on the Vite and Vue logos to learn more<\/p>/,
-      `<p class="read-the-docs">Click on the Vite and Vue logos to learn more</p>
-    <div class="powered-box">
-      Powered by <span class="powered-highlight">StackCraft</span>
-    </div>`
-    );
-  
-    fs.writeFileSync(vueJsPath, vueJsPathContent, "utf-8");
+    if (fs.existsSync(vueJsPath)) {
+      let vueJsPathContent = fs.readFileSync(vueJsPath, "utf-8");
 
-    // Replace <p> with new block
-    vueJsPathContent = vueJsPathContent.replace(
-      /<p class="read-the-docs">Click on the Vite and Vue logos to learn more<\/p>/,
-      `<p class="read-the-docs">Click on the Vite and Vue logos to learn more</p>
-    <div class="powered-box">
-      Powered by <span class="powered-highlight">StackCraft</span>
-    </div>`
-    );
-
-    // Replace <style> block (or append if missing)
-    const newStyles = `<style scoped>
-    .powered-box {
-      position: fixed;
-      bottom: 24px;
-      left: 24px;
-      background-color: black;
-      color: white;
-      padding: 8px 16px;
-      font-size: 0.875rem;
-      border-radius: 16px;
-      box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-      opacity: 0.85;
-      transition: opacity 0.2s ease;
-      cursor: default;
-    }
-
-    .powered-box:hover {
-      opacity: 1;
-    }
-
-    .powered-highlight {
-      font-weight: 600;
-      color: #22c55e;
-    }
-
-    .read-the-docs {
-      color: #888;
-    }
-    </style>`;
-
-    if (/<style scoped>[\s\S]*?<\/style>/.test(vueJsPathContent)) {
       vueJsPathContent = vueJsPathContent.replace(
-        /<style scoped>[\s\S]*?<\/style>/,
-        newStyles
+        /<p class="read-the-docs">Click on the Vite and Vue logos to learn more<\/p>/,
+        `<p class="read-the-docs">Click on the Vite and Vue logos to learn more</p>\n    <div class="powered-box">\n      Powered by <span class="powered-highlight">StackCraft</span>\n    </div>`
       );
-    } else {
-      vueJsPathContent += `\n\n${newStyles}`;
+
+      const newStyles = `<style scoped>\n    .powered-box {\n      position: fixed;\n      bottom: 24px;\n      left: 24px;\n      background-color: black;\n      color: white;\n      padding: 8px 16px;\n      font-size: 0.875rem;\n      border-radius: 16px;\n      box-shadow: 0 4px 6px rgba(0,0,0,0.3);\n      opacity: 0.85;\n      transition: opacity 0.2s ease;\n      cursor: default;\n    }\n\n    .powered-box:hover {\n      opacity: 1;\n    }\n\n    .powered-highlight {\n      font-weight: 600;\n      color: #22c55e;\n    }\n\n    .read-the-docs {\n      color: #888;\n    }\n    </style>`;
+
+      if (/<style scoped>[\s\S]*?<\/style>/.test(vueJsPathContent)) {
+        vueJsPathContent = vueJsPathContent.replace(
+          /<style scoped>[\s\S]*?<\/style>/,
+          newStyles
+        );
+      } else {
+        vueJsPathContent += `\n\n${newStyles}`;
+      }
+
+      fs.writeFileSync(vueJsPath, vueJsPathContent, "utf-8");
     }
 
-    fs.writeFileSync(vueJsPath, vueJsPathContent, "utf-8");
-    
-    // serverSetup(projectPath,config,projectName);
     logger.info("✅ MEVN project created successfully!");
-
   } catch (error) {
     logger.error("❌ Failed to set up MEVN");
     throw error;

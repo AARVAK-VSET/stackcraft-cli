@@ -3,30 +3,30 @@ import assert from "node:assert";
 import { installDependencies } from "../utils/installer.js";
 import path from "path";
 
-test("installDependencies should reject shell metacharacters in dependencies", () => {
+test("installDependencies should reject shell metacharacters in dependencies", async () => {
   const projectPath = path.join(process.cwd(), "dummy_project");
-  
+
   const maliciousDependencies = ["express", "&&", "rm", "-rf", "/"];
-  
-  assert.throws(
-    () => {
-      installDependencies(projectPath, {}, "dummy", true, maliciousDependencies);
+
+  await assert.rejects(
+    async () => {
+      await installDependencies(projectPath, {}, "dummy", true, maliciousDependencies);
     },
     {
-      name: 'Error',
-      message: /Invalid package name rejected: &&/
+      name: "Error",
+      message: /Invalid package name rejected: &&/,
     },
     "Should throw error for malicious package argument '&&'"
   );
-  
+
   const maliciousDependencies2 = ["express;echo", "vuln"];
-  assert.throws(
-    () => {
-      installDependencies(projectPath, {}, "dummy", true, maliciousDependencies2);
+  await assert.rejects(
+    async () => {
+      await installDependencies(projectPath, {}, "dummy", true, maliciousDependencies2);
     },
     {
-      name: 'Error',
-      message: /Invalid package name rejected: express;echo/
+      name: "Error",
+      message: /Invalid package name rejected: express;echo/,
     },
     "Should throw error for malicious package argument 'express;echo'"
   );
