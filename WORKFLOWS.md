@@ -108,13 +108,32 @@ npm run populate-issues       # Add existing issues to database
 npm run debug-db             # Check database status
 npm run check-duplicates     # Check for duplicates
 
-# Cleanup operations  
-npm run cleanup-duplicates --force    # Remove duplicates
-npm run cleanup-issue                 # Remove specific closed issue
+# Cleanup operations (preview first with --dry-run)
+node scripts/cleanup-duplicates.js --dry-run       # Preview duplicate vectors
+node scripts/cleanup-duplicates.js                 # Remove duplicates (asks for confirmation)
+node scripts/cleanup-specific-issue.js 6 --dry-run # Preview vectors for issue #6
 
 # Dangerous operations (use with caution!)
-npm run clear-all:force              # ⚠️ Delete ALL vectors
+node scripts/clear-all-vectors.js --dry-run        # Show how many vectors would be deleted
+node scripts/clear-all-vectors.js                  # ⚠️ Delete ALL vectors (type index name to confirm)
 ```
+
+### Maintenance Script Safety Flags
+
+All destructive vector scripts (`clear-all-vectors.js`, `cleanup-duplicates.js`,
+`cleanup-specific-issue.js`, `cleanup-closed-issue.js`) share the same options:
+
+| Flag | Description |
+|------|-------------|
+| `-n`, `--dry-run` | Show the affected vector counts/IDs without deleting anything (or posting comments) |
+| `-y`, `--yes` | Skip the interactive confirmation prompt |
+| `--force` | Deprecated alias for `--yes` |
+| `-h`, `--help` | Show usage |
+
+Without `--yes`, each script asks for confirmation before deleting (`clear-all-vectors.js`
+requires typing the index name). In non-interactive environments such as GitHub Actions
+there is no terminal to confirm in, so the scripts refuse to delete and exit with code 1
+unless `--yes` is passed. Workflows that call these scripts must pass `--yes` explicitly.
 
 ### Required Secrets
 
