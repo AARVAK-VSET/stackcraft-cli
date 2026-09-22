@@ -2,6 +2,12 @@ import { Octokit } from "@octokit/rest";
 import fetch from "node-fetch";
 import { Pinecone } from "@pinecone-database/pinecone";
 
+if (!process.env.GITHUB_REPOSITORY) {
+  console.error("Error: Missing required environment variable 'GITHUB_REPOSITORY'.");
+  console.error("Please set it (e.g., GITHUB_REPOSITORY='owner/repo') before running this script.");
+  process.exit(1);
+}
+
 const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
 const OWNER = process.env.GITHUB_REPOSITORY.split("/")[0];
 const REPO = process.env.GITHUB_REPOSITORY.split("/")[1];
