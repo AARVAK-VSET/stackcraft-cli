@@ -132,10 +132,22 @@ export async function angularSetup(projectPath, config, projectName) {
     const npxCmd = process.platform === "win32" ? "npx.cmd" : "npx";
     await spawnAsync(
       npxCmd,
-      ["-y", "@angular/cli", "new", "client", "--style=css", "--skip-git", "--skip-install"],
+      [
+        "-y",
+        "@angular/cli",
+        "new",
+        "client",
+        "--style=css",
+        "--routing=false",
+        "--ssr=false",
+        "--skip-git",
+        "--skip-install",
+        "--interactive=false",
+      ],
       {
         cwd: projectPath,
         spinnerText: "Setting up Angular client...",
+        env: { NG_CLI_ANALYTICS: "false" },
       }
     );
 
@@ -153,10 +165,15 @@ export async function angularTailwindSetup(projectPath, config, projectName) {
     const npxCmd = process.platform === "win32" ? "npx.cmd" : "npx";
     const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
 
-    await spawnAsync(npxCmd, ["-y", "@angular/cli", "new", "client", "--style", "css"], {
-      cwd: projectPath,
-      spinnerText: "Scaffolding Angular application...",
-    });
+    await spawnAsync(
+      npxCmd,
+      ["-y", "@angular/cli", "new", "client", "--style=css", "--routing=false", "--ssr=false", "--interactive=false"],
+      {
+        cwd: projectPath,
+        spinnerText: "Scaffolding Angular application...",
+        env: { NG_CLI_ANALYTICS: "false" },
+      }
+    );
 
     const clientPath = path.join(projectPath, "client");
 
