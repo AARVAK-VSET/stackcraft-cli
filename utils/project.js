@@ -37,7 +37,7 @@ export function assertDestinationAvailable(projectPath, projectName) {
  *
  * @param {string} projectName
  * @param {{ stack: string, language: string }} config
- * @param {{ skipInstall?: boolean, targetDir?: string, silent?: boolean }} [options={}]
+ * @param {{ skipInstall?: boolean, targetDir?: string, silent?: boolean, throwOnError?: boolean }} [options={}]
  */
 export async function setupProject(projectName, config, options = {}) {
   // 1. Pure configuration validation
@@ -67,142 +67,93 @@ export async function setupProject(projectName, config, options = {}) {
     directoryCreated = true;
 
     // --- Pretty Project Config (Boxed) ---
-    const configText = `
+    if (!options.silent && process.env.NODE_ENV !== "test") {
+      const configText = `
       ${chalk.bold("🌐 Stack:")}  ${chalk.green(config.stack)}
       ${chalk.bold("📦 Project Name:")}  ${chalk.blue(projectName)}
       ${chalk.bold("📖 Language:")}  ${chalk.red(config.language)}
       `;
 
-    console.log(
-      boxen(configText, {
-        padding: 1,
-        margin: 1,
-        borderColor: "cyan",
-        borderStyle: "round",
-        title: chalk.cyanBright("📋 Project Configuration"),
-        titleAlignment: "center",
-      })
-    );
+      console.log(
+        boxen(configText, {
+          padding: 1,
+          margin: 1,
+          borderColor: "cyan",
+          borderStyle: "round",
+          title: chalk.cyanBright("📋 Project Configuration"),
+          titleAlignment: "center",
+        })
+      );
+    }
 
-    // --- Copy & Install ---
-    if(config.stack !== "mean" && config.stack !== "mean+tailwind+auth" && config.stack!=="hono"){
+    // 4. Offline / skipInstall mode (bypasses heavy external package manager calls)
+    if (options.skipInstall) {
       copyTemplates(projectPath, config);
-      installDependencies(projectPath, config, projectName);
+      return { projectPath, success: true };
     }
 
-    if(config.stack==="mern+tailwind+auth"){
-      mernSetup(projectPath,config,projectName);
+    // 5. Standard scaffolding & dependency installation
+    if (config.stack === "mern+tailwind+auth") {
+      await mernSetup(projectPath, config, projectName);
       copyTemplates(projectPath, config);
-      mernTailwindSetup(projectPath, config, projectName);
-      installDependencies(projectPath, config, projectName);
-      serverAuthSetup(projectPath,config,projectName);
-    }
-
-    if(config.stack === 'mevn'){
-      mevnSetup(projectPath,config,projectName)
-      copyTemplates(projectPath,config)
-      installDependencies(projectPath,config,projectName)
-      serverSetup(projectPath,config,projectName)
-    }
-
-    if(config.stack === "mean"){
-      angularSetup(projectPath, config);
-      installDependencies(projectPath, config, projectName);
+      await mernTailwindSetup(projectPath, config, projectName);
+      await installDependencies(projectPath, config, projectName);
+      await serverAuthSetup(projectPath, config, projectName);
+    } else if (config.stack === "mevn") {
+      await mevnSetup(projectPath, config, projectName);
       copyTemplates(projectPath, config);
-      serverSetup(projectPath,config,projectName)
-    }
-    
-    if(config.stack === "mean+tailwind+auth"){
-      angularTailwindSetup(projectPath, config, projectName);
-      installDependencies(projectPath, config, projectName);
-  }
-
-  // 4. Offline / skipInstall mode (bypasses heavy external package manager calls)
-  if (options.skipInstall) {
-    copyTemplates(projectPath, config);
-    return { projectPath, success: true };
-  }
-
-  // 5. Standard scaffolding & dependency installation
-  if (config.stack !== "mean" && config.stack !== "mean+tailwind+auth" && config.stack !== "hono") {
-    copyTemplates(projectPath, config);
-    installDependencies(projectPath, config, projectName);
-  }
-
-  if (config.stack === "mern+tailwind+auth") {
-    mernSetup(projectPath, config, projectName);
-    copyTemplates(projectPath, config);
-    mernTailwindSetup(projectPath, config, projectName);
-    installDependencies(projectPath, config, projectName);
-    serverAuthSetup(projectPath, config, projectName);
-  }
-
-  if (config.stack === "mevn") {
-    mevnSetup(projectPath, config, projectName);
-    copyTemplates(projectPath, config);
-    installDependencies(projectPath, config, projectName);
-    serverSetup(projectPath, config, projectName);
-  }
-
-  if (config.stack === "mean") {
-    angularSetup(projectPath, config);
-    installDependencies(projectPath, config, projectName);
-    copyTemplates(projectPath, config);
-    serverSetup(projectPath, config, projectName);
-  }
-
-  if (config.stack === "mean+tailwind+auth") {
-    angularTailwindSetup(projectPath, config, projectName);
-    installDependencies(projectPath, config, projectName);
-    copyTemplates(projectPath, config);
-  }
-
-  if (config.stack === "hono") {
-    try {
-      HonoReactSetup(projectPath, config, projectName);
-      installDependencies(projectPath, config, projectName, false);
-    } catch {
+      await installDependencies(projectPath, config, projectName);
+      await serverSetup(projectPath, config, projectName);
+    } else if (config.stack === "mean") {
+      await angularSetup(projectPath, config, projectName);
+      await installDependencies(projectPath, config, projectName);
       copyTemplates(projectPath, config);
-    }
-    
-    if(config.stack === "hono"){
-     try{
-
-       HonoReactSetup(projectPath,config,projectName);
-       installDependencies(projectPath, config, projectName,false);
-      }
-      catch{
+      await serverSetup(projectPath, config, projectName);
+    } else if (config.stack === "mean+tailwind+auth") {
+      await angularTailwindSetup(projectPath, config, projectName);
+      await installDependencies(projectPath, config, projectName);
+      copyTemplates(projectPath, config);
+    } else if (config.stack === "hono") {
+      try {
+        await HonoReactSetup(projectPath, config, projectName);
+        await installDependencies(projectPath, config, projectName, false);
+      } catch {
         copyTemplates(projectPath, config);
       }
-    }
-
-    if (config.stack ==="mern") {
-      mernSetup(projectPath,config,projectName);
+    } else if (config.stack === "mern") {
+      await mernSetup(projectPath, config, projectName);
       copyTemplates(projectPath, config);
-      installDependencies(projectPath, config, projectName,false,[])
+      await installDependencies(projectPath, config, projectName, false, []);
+    } else {
+      copyTemplates(projectPath, config);
+      await installDependencies(projectPath, config, projectName);
     }
 
     // --- Success + Next Steps ---
-    console.log(chalk.gray("-------------------------------------------"))
-    console.log(`${chalk.greenBright(`✅ Project ${chalk.bold.yellow(`${projectName}`)} created successfully! 🎉`)}`);
-    console.log(chalk.gray("-------------------------------------------"))
-    console.log(chalk.cyan("👉 Next Steps:\n"));
-    
-    if(config.stack === "mean" || config.stack === "mean+tailwind+auth") {
-      console.log(`   ${chalk.yellow("cd")} ${projectName}/client && ${chalk.green("npm start")}`);
-      console.log(`   ${chalk.yellow("cd")} ${projectName}/server && ${chalk.green("npm start")}`);
-    } else if(config.stack === "t3-stack") {
-      console.log(`   ${chalk.yellow("cd")} ${projectName}/t3-app && ${chalk.green("npm run dev")}`);
-    }else if(config.stack==="hono"){
-      console.log(`   ${chalk.yellow("cd")} ${projectName}/client && ${chalk.green("npm run dev")}`);
-      console.log(`   ${chalk.yellow("cd")} ${projectName}/server && ${chalk.green("npm run dev")}`);
-    } else {
-      console.log(`   ${chalk.yellow("cd")} ${projectName}/client && ${chalk.green("npm run dev")}`);
-      console.log(`   ${chalk.yellow("cd")} ${projectName}/server && ${chalk.green("npm start")}`);
+    if (!options.silent && process.env.NODE_ENV !== "test") {
+      console.log(chalk.gray("-------------------------------------------"));
+      console.log(`${chalk.greenBright(`✅ Project ${chalk.bold.yellow(`${projectName}`)} created successfully! 🎉`)}`);
+      console.log(chalk.gray("-------------------------------------------"));
+      console.log(chalk.cyan("👉 Next Steps:\n"));
+
+      if (config.stack === "mean" || config.stack === "mean+tailwind+auth") {
+        console.log(`   ${chalk.yellow("cd")} ${projectName}/client && ${chalk.green("npm start")}`);
+        console.log(`   ${chalk.yellow("cd")} ${projectName}/server && ${chalk.green("npm start")}`);
+      } else if (config.stack === "t3-stack") {
+        console.log(`   ${chalk.yellow("cd")} ${projectName}/t3-app && ${chalk.green("npm run dev")}`);
+      } else if (config.stack === "hono") {
+        console.log(`   ${chalk.yellow("cd")} ${projectName}/client && ${chalk.green("npm run dev")}`);
+        console.log(`   ${chalk.yellow("cd")} ${projectName}/server && ${chalk.green("npm run dev")}`);
+      } else {
+        console.log(`   ${chalk.yellow("cd")} ${projectName}/client && ${chalk.green("npm run dev")}`);
+        console.log(`   ${chalk.yellow("cd")} ${projectName}/server && ${chalk.green("npm start")}`);
+      }
+
+      console.log(chalk.gray("-------------------------------------------"));
+      console.log(chalk.cyan("\n✨ Crafted with ❤️  by StackCraft | AARVAK-VSET ✨\n"));
     }
-    
-    console.log(chalk.gray("-------------------------------------------"))
-    console.log(chalk.cyan("\n✨ Crafted with ❤️  by StackCraft | AARVAK-VSET ✨\n"));
+
+    return { projectPath, success: true };
   } catch (error) {
     if (directoryCreated) {
       logger.error(`\n❌ Error during setup. Rolling back and removing directory ${chalk.red(projectName)}...`);

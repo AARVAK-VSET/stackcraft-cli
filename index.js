@@ -124,18 +124,13 @@ async function main() {
 
   try {
     if (projectName) {
-      if (!/^[a-zA-Z0-9-_]+$/.test(projectName)) {
-        console.log(chalk.red("Error: Invalid project name. Only letters, numbers, hyphens, and underscores are allowed. Path traversal operators are rejected."));
-        process.exit(1);
-      }
-    } else {
-      projectName = await askProjectName();
-    } else {
       const nameValidation = validateProjectName(projectName);
       if (!nameValidation.valid) {
         console.log(chalk.red("❌ Error:"), nameValidation.error);
         process.exit(1);
       }
+    } else {
+      projectName = await askProjectName();
     }
 
     const stackAnswers = await askStackQuestions();
