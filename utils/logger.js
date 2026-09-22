@@ -1,8 +1,38 @@
 import chalk from "chalk";
+let currentMode = "normal";
 
 export const logger = {
-  info: (msg) => console.log(chalk.blue(msg)),
-  success: (msg) => console.log(chalk.green(msg)),
-  warn: (msg) => console.log(chalk.yellow(msg)),
-  error: (msg) => console.log(chalk.red(msg)),
+  setLevel: (level) => {
+    currentMode = level;
+  },
+
+  info: (msg) => {
+    if (currentMode !== "silent") {
+      console.log(chalk.blue(msg));
+    }
+  },
+
+  success: (msg) => {
+    if (currentMode !== "silent") {
+      console.log(chalk.green(msg));
+    }
+  },
+
+  warn: (msg) => {
+    if (currentMode !== "silent") {
+      console.log(chalk.yellow(msg));
+    }
+  },
+
+  error: (msg) => {
+    if (currentMode !== "silent") {
+      console.log(chalk.red(msg));
+    }
+  },
+
+  debug: (msg) => {
+    if (currentMode === "verbose") {
+      console.log(chalk.gray(msg));
+    }
+  }
 };
