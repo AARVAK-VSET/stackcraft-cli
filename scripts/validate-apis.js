@@ -42,8 +42,8 @@ async function validateGitHub() {
     const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
     
     // Test with current repository or fallback
-    const owner = process.env.GITHUB_REPOSITORY?.split("/")[0] || process.env.GITHUB_OWNER || "seroski-ai";
-    const repo = process.env.GITHUB_REPOSITORY?.split("/")[1] || process.env.GITHUB_REPO || "seroski-dupbot";
+    const owner = process.env.GITHUB_REPOSITORY?.split("/")[0] || process.env.GITHUB_OWNER || "AARVAK-VSET";
+const repo = process.env.GITHUB_REPOSITORY?.split("/")[1] || process.env.GITHUB_REPO || "stackcraft-cli";
     
     const result = await octokit.repos.get({ owner, repo });
     
