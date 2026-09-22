@@ -213,6 +213,43 @@ export async function HonoReactSetup(projectPath, config, projectName) {
   }
 }
 
+export function insertPoweredBadge(lines, badgeLine) {
+  const returnIdx = lines.findIndex((l) => /return\s*\(/.test(l));
+  if (returnIdx === -1) return false;
+
+  let rootLineIdx = -1;
+  for (let i = returnIdx + 1; i < lines.length; i++) {
+    if (lines[i].trim() !== "") {
+      rootLineIdx = i;
+      break;
+    }
+  }
+  if (rootLineIdx === -1) return false;
+
+  const rootLine = lines[rootLineIdx].trim();
+  const isFragment = rootLine.startsWith("<>");
+  const tagMatch = rootLine.match(/^<([A-Za-z][A-Za-z0-9.]*)/);
+  if (!isFragment && !tagMatch) return false;
+
+  const tagName = isFragment ? null : tagMatch[1];
+  const openRe = isFragment
+    ? /<>/g
+    : new RegExp(`<${tagName}(\\s[^>]*)?(?<!/)>`, "g");
+  const closeRe = isFragment ? /<\/>/g : new RegExp(`</${tagName}>`, "g");
+
+  let depth = 0;
+  for (let i = rootLineIdx; i < lines.length; i++) {
+    const opens = (lines[i].match(openRe) || []).length;
+    const closes = (lines[i].match(closeRe) || []).length;
+    depth += opens - closes;
+    if (depth === 0) {
+      lines.splice(i, 0, badgeLine);
+      return true;
+    }
+  }
+  return false;
+}
+
 export async function mernSetup(projectPath, config, projectName) {
   logger.info("⚡ Setting up MERN...");
 
@@ -236,12 +273,7 @@ export async function mernSetup(projectPath, config, projectName) {
       if (fs.existsSync(appJsxPath)) {
         let appJsx = fs.readFileSync(appJsxPath, "utf-8");
         const lines = appJsx.split("\n");
-        for (let i = 0; i < lines.length; i++) {
-          if (lines[i].includes("</>")) {
-            lines.splice(i, 0, `  <div className="powered-badge">Powered by <span className="stackcraft">StackCraft</span></div>`);
-            break;
-          }
-        }
+        insertPoweredBadge(lines, `  <div className="powered-badge">Powered by <span className="stackcraft">StackCraft</span></div>`);
         fs.writeFileSync(appJsxPath, lines.join("\n"), "utf-8");
       }
 
@@ -258,12 +290,7 @@ export async function mernSetup(projectPath, config, projectName) {
       if (fs.existsSync(appTsxPath)) {
         let appTsx = fs.readFileSync(appTsxPath, "utf-8");
         const lines = appTsx.split("\n");
-        for (let i = 0; i < lines.length; i++) {
-          if (lines[i].includes("</>")) {
-            lines.splice(i, 0, `  <div className="powered-badge">Powered by <span className="stackcraft">StackCraft</span></div>`);
-            break;
-          }
-        }
+        insertPoweredBadge(lines, `  <div className="powered-badge">Powered by <span className="stackcraft">StackCraft</span></div>`);
         fs.writeFileSync(appTsxPath, lines.join("\n"), "utf-8");
       }
 
