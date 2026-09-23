@@ -1,4 +1,5 @@
 const express = require("express");
+const rateLimit = require("express-rate-limit");
 const mongoose = require("mongoose");
 const dotenv = require("dotenv");
 const cors = require("cors");
@@ -8,6 +9,11 @@ const authRoutes = require("./routes/authRoutes.js");
 
 
 dotenv.config();
+
+if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 16) {
+  console.error("FATAL: JWT_SECRET is missing or too weak (minimum 16 characters). Set a strong secret in .env before starting the server.");
+  process.exit(1);
+}
 
 const app = express();
 const mongoURI = process.env.MONGO_URI;
@@ -19,8 +25,16 @@ app.use(cors());
 app.use(helmet());
 app.use(morgan("dev"));
 
+const authLimiter = rateLimit({                         
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many attempts, please try again later." },
+});
+
 // Routes
-app.use("/api/auth", authRoutes);
+app.use("/api/auth", authLimiter, authRoutes); 
 
 // Safe MongoDB connection for scaffold
 if (!mongoURI || mongoURI === "your_mongodb_uri_here") {
@@ -38,3 +52,4 @@ if (!mongoURI || mongoURI === "your_mongodb_uri_here") {
       app.listen(port, () => console.log(`Server running without DB on port ${port}`));
     });
 }
+module.exports = app;
