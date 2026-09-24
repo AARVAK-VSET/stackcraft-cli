@@ -58,6 +58,23 @@ export function stackSupportsMultipleLanguages(stack) {
 }
 
 /**
+ * Validates that a stack has a template for the requested language.
+ * @param {string} stack
+ * @param {string} language
+ * @returns {{ valid: boolean, error?: string }}
+ */
+export function validateStackLanguage(stack, language) {
+  if (!getSupportedLanguages(stack).includes(language)) {
+    return {
+      valid: false,
+      error: `Language "${language}" is not supported for ${stack}. Supported languages: ${getSupportedLanguages(stack).join(", ")}`,
+    };
+  }
+
+  return { valid: true };
+}
+
+/**
  * Validates a project name against naming rules and path traversal operators.
  * @param {string} name
  * @returns {{ valid: boolean, error?: string }}
@@ -152,6 +169,9 @@ export function validateConfig(config) {
 
   const langResult = validateLanguage(config.language);
   if (!langResult.valid) return langResult;
+
+  const stackLanguageResult = validateStackLanguage(config.stack, config.language);
+  if (!stackLanguageResult.valid) return stackLanguageResult;
 
   return { valid: true };
 }
