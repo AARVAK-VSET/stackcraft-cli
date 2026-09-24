@@ -2,20 +2,11 @@ import { Octokit } from "@octokit/rest";
 import fetch from "node-fetch";
 import { Pinecone } from "@pinecone-database/pinecone";
 import dotenv from "dotenv";
+import { fetchAllOpenIssues } from "./lib/fetch-repo-issues.js";
+import { isDirectRun } from "./lib/maintenance-cli.js";
 
 // Load environment variables
 dotenv.config();
-
-const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
-const OWNER = process.env.GITHUB_REPOSITORY?.split("/")[0] || process.env.GITHUB_OWNER;
-const REPO = process.env.GITHUB_REPOSITORY?.split("/")[1] || process.env.GITHUB_REPO;
-
-// Initialize Pinecone client
-const pinecone = new Pinecone({
-  apiKey: process.env.PINECONE_API_KEY,
-});
-
-const indexName = process.env.PINECONE_INDEX;
 
 // Gemini embedding function
 async function generateEmbedding(text) {
@@ -66,59 +57,50 @@ function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function populateExistingIssues() {
-  console.log(`\n=== Populating Pinecone with existing open issues ===`);
-  console.log(`Repository: ${OWNER}/${REPO}`);
-  console.log(`Pinecone Index: ${indexName}`);
+export async function populateExistingIssues({
+  octokit,
+  index,
+  indexName,
+  owner: OWNER,
+  repo: REPO,
+  log = console.log,
+} = {}) {
+  log(`\n=== Populating Pinecone with existing open issues ===`);
+  log(`Repository: ${OWNER}/${REPO}`);
+  log(`Pinecone Index: ${indexName}`);
 
   if (!OWNER || !REPO) {
-    console.error("❌ Repository owner and name must be specified via GITHUB_REPOSITORY or GITHUB_OWNER/GITHUB_REPO environment variables");
-    process.exit(1);
+    throw new Error(
+      "Repository owner and name must be specified via GITHUB_REPOSITORY or GITHUB_OWNER/GITHUB_REPO environment variables"
+    );
+  }
+
+  if (!octokit || !index) {
+    throw new Error("octokit and Pinecone index instances are required");
   }
 
   try {
-    // Initialize Pinecone index
-    const index = pinecone.Index(indexName);
-    console.log("✅ Connected to Pinecone index");
+    log("✅ Connected to Pinecone index");
 
-    // Fetch all open issues from the repository
-    console.log("📥 Fetching open issues from GitHub...");
-    
-    let allIssues = [];
-    let page = 1;
-    const perPage = 100;
-    
-    while (true) {
-      const { data: issues } = await octokit.issues.listForRepo({
-        owner: OWNER,
-        repo: REPO,
-        state: 'open',
-        per_page: perPage,
-        page: page,
-      });
-      
-      if (issues.length === 0) break;
-      
-      // Filter out pull requests (they show up in issues API)
-      const actualIssues = issues.filter(issue => !issue.pull_request);
-      allIssues = allIssues.concat(actualIssues);
-      
-      console.log(`  📄 Fetched page ${page} - ${actualIssues.length} issues`);
-      page++;
-      
-      // Add delay to respect GitHub API rate limits
-      await delay(1000);
-    }
+    // Fetch every page of open issues (no silent 100-item truncation)
+    log("📥 Fetching open issues from GitHub...");
+    const allIssues = await fetchAllOpenIssues(octokit, {
+      owner: OWNER,
+      repo: REPO,
+      perPage: 100,
+      delayMs: 1000,
+      log,
+    });
 
-    console.log(`✅ Total open issues found: ${allIssues.length}`);
+    log(`✅ Total open issues found: ${allIssues.length}`);
 
     if (allIssues.length === 0) {
-      console.log("ℹ️  No open issues found. Nothing to populate.");
-      return;
+      log("ℹ️  No open issues found. Nothing to populate.");
+      return { total: 0, successful: 0, failed: 0 };
     }
 
     // Check if issues already exist in Pinecone to avoid duplicates
-    console.log("🔍 Checking for existing issues in Pinecone...");
+    log("🔍 Checking for existing issues in Pinecone...");
     
     const existingIssueNumbers = new Set();
     
@@ -126,17 +108,17 @@ async function populateExistingIssues() {
       // Get index statistics first
       const stats = await index.describeIndexStats();
       const totalVectors = stats.totalRecordCount || 0;
-      console.log(`  📊 Index contains ${totalVectors} total vectors`);
+      log(`  📊 Index contains ${totalVectors} total vectors`);
       
       if (totalVectors === 0) {
-        console.log("  ℹ️  Index is empty, all issues will be processed");
+        log("  ℹ️  Index is empty, all issues will be processed");
       } else {
         // Use multiple approaches to check for existing vectors
-        console.log("  🔍 Checking for existing issue vectors...");
+        log("  🔍 Checking for existing issue vectors...");
         
         // Method 1: Try to query with a sample vector to get some existing vectors
         try {
-          console.log("    🔍 Sampling existing vectors...");
+          log("    🔍 Sampling existing vectors...");
           const sampleQuery = await index.query({
             vector: Array(1024).fill(0.1),
             topK: Math.min(100, totalVectors),
@@ -144,20 +126,20 @@ async function populateExistingIssues() {
           });
           
           if (sampleQuery.matches && sampleQuery.matches.length > 0) {
-            console.log(`    📋 Found ${sampleQuery.matches.length} sample vectors`);
+            log(`    📋 Found ${sampleQuery.matches.length} sample vectors`);
             for (const match of sampleQuery.matches) {
               if (match.metadata?.issue_number) {
                 existingIssueNumbers.add(match.metadata.issue_number);
-                console.log(`      ✓ Found existing issue #${match.metadata.issue_number}`);
+                log(`      ✓ Found existing issue #${match.metadata.issue_number}`);
               }
             }
           }
         } catch (sampleError) {
-          console.log("    ⚠️  Sample query failed, trying direct fetch approach");
+          log("    ⚠️  Sample query failed, trying direct fetch approach");
         }
         
         // Method 2: Try to fetch vectors by their expected IDs
-        console.log("    🔍 Checking by direct ID lookup...");
+        log("    🔍 Checking by direct ID lookup...");
         for (let i = 0; i < allIssues.length; i += 10) {
           const batch = allIssues.slice(i, i + 10);
           
@@ -174,14 +156,14 @@ async function populateExistingIssues() {
                   const issueNum = parseInt(match[1]);
                   if (!existingIssueNumbers.has(issueNum)) {
                     existingIssueNumbers.add(issueNum);
-                    console.log(`      ✓ Found existing issue #${issueNum} by ID`);
+                    log(`      ✓ Found existing issue #${issueNum} by ID`);
                   }
                 }
               });
             }
           } catch (fetchError) {
             // If fetch fails, try metadata filter queries for this batch
-            console.log(`      ⚠️  Fetch failed for batch, trying metadata queries...`);
+            log(`      ⚠️  Fetch failed for batch, trying metadata queries...`);
             for (const issue of batch) {
               try {
                 const queryResult = await index.query({
@@ -194,7 +176,7 @@ async function populateExistingIssues() {
                 if (queryResult.matches && queryResult.matches.length > 0) {
                   if (!existingIssueNumbers.has(issue.number)) {
                     existingIssueNumbers.add(issue.number);
-                    console.log(`      ✓ Found existing issue #${issue.number} by query`);
+                    log(`      ✓ Found existing issue #${issue.number} by query`);
                   }
                 }
               } catch (queryError) {
@@ -208,26 +190,26 @@ async function populateExistingIssues() {
         }
       }
     } catch (error) {
-      console.log("  ⚠️  Error checking existing issues:", error.message);
-      console.log("  🔄 Will process all issues to be safe");
+      log(`  ⚠️  Error checking existing issues: ${error.message}`);
+      log("  🔄 Will process all issues to be safe");
     }
     
-    console.log(`Found ${existingIssueNumbers.size} existing issues in Pinecone`);
+    log(`Found ${existingIssueNumbers.size} existing issues in Pinecone`);
 
     // Filter out issues that already exist in Pinecone
     const newIssues = allIssues.filter(issue => !existingIssueNumbers.has(issue.number));
     const skippedCount = allIssues.length - newIssues.length;
     
-    console.log(`📝 ${newIssues.length} new issues to process`);
-    console.log(`⏭️  ${skippedCount} issues skipped (already exist in Pinecone)`);
+    log(`📝 ${newIssues.length} new issues to process`);
+    log(`⏭️  ${skippedCount} issues skipped (already exist in Pinecone)`);
     
     if (skippedCount > 0) {
-      console.log(`   Skipped issues: ${Array.from(existingIssueNumbers).sort((a, b) => a - b).join(', ')}`);
+      log(`   Skipped issues: ${Array.from(existingIssueNumbers).sort((a, b) => a - b).join(', ')}`);
     }
 
     if (newIssues.length === 0) {
-      console.log("✅ All open issues are already in Pinecone. Nothing to add.");
-      return;
+      log("✅ All open issues are already in Pinecone. Nothing to add.");
+      return { total: allIssues.length, successful: 0, failed: 0, skipped: skippedCount };
     }
 
     // Process issues in batches to avoid overwhelming the APIs
@@ -238,13 +220,13 @@ async function populateExistingIssues() {
 
     for (let i = 0; i < newIssues.length; i += batchSize) {
       const batch = newIssues.slice(i, i + batchSize);
-      console.log(`\n📦 Processing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(newIssues.length / batchSize)}`);
+      log(`\n📦 Processing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(newIssues.length / batchSize)}`);
 
       const vectors = [];
 
       for (const issue of batch) {
         try {
-          console.log(`  🔄 Processing issue #${issue.number}: "${issue.title.substring(0, 50)}..."`);
+          log(`  🔄 Processing issue #${issue.number}: "${issue.title.substring(0, 50)}..."`);
           
           // Combine title and body for embedding
           const issueText = `${issue.title} ${issue.body || ""}`;
@@ -271,13 +253,13 @@ async function populateExistingIssues() {
           });
 
           processed++;
-          console.log(`    ✅ Issue #${issue.number} prepared`);
+          log(`    ✅ Issue #${issue.number} prepared`);
           
           // Add delay between API calls to respect rate limits
           await delay(500);
           
         } catch (error) {
-          console.error(`    ❌ Failed to process issue #${issue.number}:`, error.message);
+          log(`    ❌ Failed to process issue #${issue.number}: ${error.message}`);
           failed++;
         }
       }
@@ -285,14 +267,13 @@ async function populateExistingIssues() {
       // Upsert batch to Pinecone
       if (vectors.length > 0) {
         try {
-          console.log(`  🔄 Upserting ${vectors.length} vectors to Pinecone...`);
+          log(`  🔄 Upserting ${vectors.length} vectors to Pinecone...`);
           await index.upsert(vectors);
           successful += vectors.length;
-          console.log(`  ✅ Batch upserted to Pinecone: ${vectors.length} vectors`);
+          log(`  ✅ Batch upserted to Pinecone: ${vectors.length} vectors`);
         } catch (error) {
-          console.error(`  ❌ Failed to upsert batch to Pinecone:`, error.message);
-          // Log which specific issues failed
-          console.error(`    Failed issues: ${vectors.map(v => v.metadata.issue_number).join(', ')}`);
+          log(`  ❌ Failed to upsert batch to Pinecone: ${error.message}`);
+          log(`    Failed issues: ${vectors.map(v => v.metadata.issue_number).join(', ')}`);
           failed += vectors.length;
         }
       }
@@ -301,27 +282,25 @@ async function populateExistingIssues() {
       await delay(2000);
     }
 
-    console.log(`\n=== Population Summary ===`);
-    console.log(`📊 Total issues processed: ${processed}`);
-    console.log(`✅ Successfully added to Pinecone: ${successful}`);
-    console.log(`❌ Failed: ${failed}`);
-    console.log(`📈 Success rate: ${((successful / processed) * 100).toFixed(1)}%`);
+    log(`\n=== Population Summary ===`);
+    log(`📊 Total issues processed: ${processed}`);
+    log(`✅ Successfully added to Pinecone: ${successful}`);
+    log(`❌ Failed: ${failed}`);
+    log(`📈 Success rate: ${processed > 0 ? ((successful / processed) * 100).toFixed(1) : 0}%`);
     
     if (successful > 0) {
-      console.log(`\n🎉 Successfully populated Pinecone with ${successful} issue embeddings!`);
-      console.log(`🤖 Your duplicate detection bot is now ready to work with existing issues.`);
+      log(`\n🎉 Successfully populated Pinecone with ${successful} issue embeddings!`);
+      log(`🤖 Your duplicate detection bot is now ready to work with existing issues.`);
     }
 
+    return { total: allIssues.length, successful, failed, processed };
   } catch (error) {
     console.error("❌ Error during population:", error);
-    process.exit(1);
+    throw error;
   }
 }
 
-// Handle command line arguments
-const args = process.argv.slice(2);
-if (args.includes('--help') || args.includes('-h')) {
-  console.log(`
+const HELP_TEXT = `
 📖 Usage: node scripts/populate-existing-issues.js
 
 🔧 Required Environment Variables:
@@ -332,18 +311,46 @@ if (args.includes('--help') || args.includes('-h')) {
   - GEMINI_API_KEY: Google Gemini API key
 
 📝 This script will:
-  1. Fetch all open issues from your GitHub repository
+  1. Fetch all open issues from your GitHub repository (every API page)
   2. Generate embeddings using Google Gemini
   3. Store them in your Pinecone vector database
   4. Skip issues that already exist in Pinecone
   
 ⚠️  Note: This script respects API rate limits and processes issues in batches.
-  `);
-  process.exit(0);
+`;
+
+async function main(argv = process.argv.slice(2)) {
+  if (argv.includes("--help") || argv.includes("-h")) {
+    console.log(HELP_TEXT);
+    return 0;
+  }
+
+  const OWNER = process.env.GITHUB_REPOSITORY?.split("/")[0] || process.env.GITHUB_OWNER;
+  const REPO = process.env.GITHUB_REPOSITORY?.split("/")[1] || process.env.GITHUB_REPO;
+  const indexName = process.env.PINECONE_INDEX;
+
+  const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
+  const pinecone = new Pinecone({ apiKey: process.env.PINECONE_API_KEY });
+  const index = pinecone.Index(indexName);
+
+  await populateExistingIssues({
+    octokit,
+    index,
+    indexName,
+    owner: OWNER,
+    repo: REPO,
+  });
+  return 0;
 }
 
-// Run the population script
-populateExistingIssues().catch(error => {
-  console.error("💥 Script failed:", error);
-  process.exit(1);
-});
+if (isDirectRun(import.meta.url)) {
+  main().then(
+    (code) => {
+      process.exitCode = code;
+    },
+    (error) => {
+      console.error("💥 Script failed:", error);
+      process.exitCode = 1;
+    }
+  );
+}
