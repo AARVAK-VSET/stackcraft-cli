@@ -7,6 +7,36 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const templatesRoot = path.join(__dirname, "..", "templates");
 
+const TEMPLATE_DIRECTORIES = {
+  mern: { server: ["mern", "Ts-Backend"] },
+  "mern+tailwind+auth": { server: ["mern+tailwind+auth", "server"] },
+  mean: { server: ["mean", "server"] },
+  "mean+tailwind+auth": { server: ["mean+tailwind+auth", "server"] },
+  mevn: { server: ["mevn", "server"] },
+  "mevn+tailwind+auth": {
+    client: ["mevn+tailwind+auth", "{language}", "client"],
+    server: ["mevn+tailwind+auth", "{language}", "server"],
+  },
+  "t3-stack": { "t3-app": ["t3-stack", "t3-app"] },
+  hono: {
+    client: ["hono", "{language}", "client"],
+    server: ["hono", "{language}", "server"],
+  },
+};
+
+function getTemplateSegments(stack, component, language) {
+  const stackTemplates = TEMPLATE_DIRECTORIES[stack];
+  const templateSegments = stackTemplates?.[component];
+
+  if (!templateSegments) {
+    throw new Error(`No template is configured for ${stack} (${component})`);
+  }
+
+  return templateSegments.map((segment) =>
+    segment === "{language}" ? language === "typescript" ? "typescript" : "javascript" : segment
+  );
+}
+
 /**
  * Resolves the absolute path to a template directory for a given stack and component.
  * Central source of truth for template discovery.
@@ -20,31 +50,10 @@ export function resolveTemplatePath(options) {
   const component = typeof options === "string" ? arguments[1] : options?.component;
   const language = typeof options === "string" ? arguments[2] : options?.language;
 
-  if (stack === "mern") {
-    // Exact repository path for MERN backend template
-    return path.join(templatesRoot, "mern", "Ts-Backend");
-  }
-
-  if (stack === "mern+tailwind+auth") {
-    return path.join(templatesRoot, "mern+tailwind+auth", "server");
-  }
-
-  if (stack === "mevn") {
-    return path.join(templatesRoot, "mevn", "server");
-  }
-
-  if (stack === "mean" || stack === "mean+tailwind+auth") {
-    return path.join(templatesRoot, stack, "server");
-  }
-
-  if (stack === "t3-stack") {
-    return path.join(templatesRoot, "t3-stack", "t3-app");
-  }
-
-  // Multi-component stacks with language variations (hono, mevn+tailwind+auth)
-  const lang = language === "typescript" ? "typescript" : "javascript";
-  const comp = component === "client" ? "client" : "server";
-  return path.join(templatesRoot, stack, lang, comp);
+  return path.join(
+    templatesRoot,
+    ...getTemplateSegments(stack, component, language)
+  );
 }
 
 /**
@@ -55,7 +64,13 @@ export function resolveTemplatePath(options) {
 export function copyTemplates(projectPath, config) {
   const { stack, language } = config;
 
-  if (stack === "mern" || stack === "mern+tailwind+auth" || stack === "mevn" || stack === "mean" || stack === "mean+tailwind+auth") {
+  if (
+    stack === "mern" ||
+    stack === "mern+tailwind+auth" ||
+    stack === "mevn" ||
+    stack === "mean" ||
+    stack === "mean+tailwind+auth"
+  ) {
     const backendTemplate = resolveTemplatePath({ stack, component: "server", language });
     const serverPath = path.join(projectPath, "server");
 

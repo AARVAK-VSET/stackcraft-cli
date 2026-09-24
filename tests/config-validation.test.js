@@ -4,6 +4,7 @@ import {
   validateProjectName,
   validateStack,
   validateLanguage,
+  validateStackLanguage,
   validateConfig,
   SUPPORTED_STACKS,
   SUPPORTED_LANGUAGES,
@@ -125,6 +126,20 @@ describe("Configuration Validation Suite", () => {
       const result = validateConfig(validConfig);
       assert.equal(result.valid, true);
       assert.equal(result.error, undefined);
+    });
+
+    it("should reject a language without a matching template variant", () => {
+      const result = validateStackLanguage("mern", "javascript");
+      assert.equal(result.valid, false);
+      assert.match(result.error, /not supported/i);
+      assert.equal(
+        validateConfig({
+          projectName: "typed-api",
+          stack: "mern",
+          language: "javascript",
+        }).valid,
+        false
+      );
     });
 
     it("should fail early with clear message when any field is invalid", () => {
