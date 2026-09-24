@@ -1,4 +1,5 @@
 const express = require("express");
+const rateLimit = require("express-rate-limit");
 const mongoose = require("mongoose");
 const dotenv = require("dotenv");
 const cors = require("cors");
@@ -8,6 +9,11 @@ const authRoutes = require("./routes/authRoutes.js");
 
 
 dotenv.config();
+
+if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 16) {
+  console.error("FATAL: JWT_SECRET is missing or too weak (minimum 16 characters). Set a strong secret in .env before starting the server.");
+  process.exit(1);
+}
 
 const app = express();
 const mongoURI = process.env.MONGO_URI;
@@ -19,23 +25,39 @@ app.use(cors());
 app.use(helmet());
 app.use(morgan("dev"));
 
-// Routes
-app.use("/api/auth", authRoutes);
-app.get('/',(req,res)=>res.status(200).json({message:"Server running"}))
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many attempts, please try again later." },
+});
 
-// Safe MongoDB connection for scaffold
-if (!mongoURI || mongoURI === "your_mongodb_uri_here") {
-  console.warn("⚠️  No Mongo URI provided. Skipping DB connection. You can set it in .env later.");
-  app.listen(port, () => console.log(`Server running without DB on port ${port}`));
-} else {
-  mongoose
-    .connect(mongoURI)
-    .then(() => {
-      console.log("MongoDB connected");
-      app.listen(port, () => console.log(`Server running on port ${port}`));
-    })
-    .catch((err) => {
-      console.error("MongoDB connection failed:", err.message);
-      app.listen(port, () => console.log(`Server running without DB on port ${port}`));
-    });
+// Routes
+app.use("/api/auth", authLimiter, authRoutes);
+app.get("/", (req, res) => res.status(200).json({ message: "Server running" }));
+
+function startServer() {
+  // Safe MongoDB connection for scaffold
+  if (!mongoURI || mongoURI === "your_mongodb_uri_here") {
+    console.warn("⚠️  No Mongo URI provided. Skipping DB connection. You can set it in .env later.");
+    app.listen(port, () => console.log(`Server running without DB on port ${port}`));
+  } else {
+    mongoose
+      .connect(mongoURI)
+      .then(() => {
+        console.log("MongoDB connected");
+        app.listen(port, () => console.log(`Server running on port ${port}`));
+      })
+      .catch((err) => {
+        console.error("MongoDB connection failed:", err.message);
+        app.listen(port, () => console.log(`Server running without DB on port ${port}`));
+      });
+  }
 }
+
+if (require.main === module) {
+  startServer();
+}
+
+module.exports = app;

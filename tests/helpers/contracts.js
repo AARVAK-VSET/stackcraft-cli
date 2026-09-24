@@ -28,13 +28,26 @@ export const STACK_CONTRACTS = {
     name: "MERN + Tailwind + Auth",
     requiredDirs: ["server"],
     requiredFiles: [
+      "server/package.json",
       "server/server.js",
       "server/.env.example",
-      "server/models",
-      "server/controllers",
-      "server/routes",
+      "server/models/User.js",
+      "server/controllers/authController.js",
+      "server/routes/authRoutes.js",
     ],
-    serverFiles: ["server/server.js"],
+    serverManifest: {
+      name: "server",
+      dependencies: [
+        "express",
+        "mongoose",
+        "jsonwebtoken",
+        "bcrypt",
+        "cors",
+        "dotenv",
+        "express-rate-limit",
+      ],
+      scripts: ["test"],
+    },
   },
 
   mean: {
