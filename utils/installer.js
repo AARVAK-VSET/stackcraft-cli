@@ -98,7 +98,15 @@ export function spawnAsync(command, args = [], options = {}) {
   });
 }
 
-export async function installDependencies(projectPath, config = {}, projectName = "", server = true, dependencies = []) {
+export async function installDependencies(
+  projectPath,
+  config = {},
+  projectName = "",
+  server = true,
+  dependencies = [],
+  clientDependencies = [],
+  runtime = {}
+) {
   logger.info("📦 Installing dependencies...");
 
   const pm = config.packageManager || "npm";
@@ -116,15 +124,13 @@ export async function installDependencies(projectPath, config = {}, projectName 
     const serverDir = path.join(projectPath, "server");
 
     if (fs.existsSync(clientDir)) {
-      const { cmd, args } = buildInstallCommand(pm);
-      await spawnAsync(cmd, args, {
+      await (runtime.spawnAsync || spawnAsync)(npmCmd, ["install", ...clientDependencies], {
         cwd: clientDir,
         spinnerText: `Installing client dependencies for ${projectName || "project"}...`,
       });
     }
     if (server && fs.existsSync(serverDir)) {
-      const { cmd, args } = buildInstallCommand(pm, dependencies);
-      await spawnAsync(cmd, args, {
+      await (runtime.spawnAsync || spawnAsync)(npmCmd, ["install", ...dependencies], {
         cwd: serverDir,
         spinnerText: `Installing server dependencies for ${projectName || "project"}...`,
       });
@@ -137,18 +143,33 @@ export async function installDependencies(projectPath, config = {}, projectName 
   }
 }
 
-export async function angularSetup(projectPath, config, projectName) {
+export async function angularSetup(projectPath, config, projectName, runtime = {}) {
   logger.info("⚡ Setting up Angular...");
 
   const pm = config?.packageManager || "npm";
 
   try {
-    const { cmd, args } = buildAngularCreateCommand(pm, "client");
-    await spawnAsync(cmd, args, {
-      cwd: projectPath,
-      spinnerText: "Setting up Angular client...",
-      env: { NG_CLI_ANALYTICS: "false" },
-    });
+    const npxCmd = process.platform === "win32" ? "npx.cmd" : "npx";
+    await (runtime.spawnAsync || spawnAsync)(
+      npxCmd,
+      [
+        "-y",
+        "@angular/cli",
+        "new",
+        "client",
+        "--style=css",
+        "--routing=false",
+        "--ssr=false",
+        "--skip-git",
+        "--skip-install",
+        "--interactive=false",
+      ],
+      {
+        cwd: projectPath,
+        spinnerText: "Setting up Angular client...",
+        env: { NG_CLI_ANALYTICS: "false" },
+      }
+    );
 
     logger.info("✅ Angular project created successfully!");
   } catch (error) {
@@ -157,26 +178,35 @@ export async function angularSetup(projectPath, config, projectName) {
   }
 }
 
-export async function angularTailwindSetup(projectPath, config, projectName) {
+export async function angularTailwindSetup(projectPath, config, projectName, runtime = {}) {
   logger.info("⚡ Setting up Angular + Tailwind...");
 
   const pm = config?.packageManager || "npm";
 
   try {
-    const angularCmd = buildAngularCreateCommand(pm, "client");
-    await spawnAsync(angularCmd.cmd, angularCmd.args, {
-      cwd: projectPath,
-      spinnerText: "Scaffolding Angular application...",
-      env: { NG_CLI_ANALYTICS: "false" },
-    });
+    const npxCmd = process.platform === "win32" ? "npx.cmd" : "npx";
+
+    await (runtime.spawnAsync || spawnAsync)(
+      npxCmd,
+      [
+        "-y",
+        "@angular/cli",
+        "new",
+        "client",
+        "--style=css",
+        "--routing=false",
+        "--ssr=false",
+        "--skip-install",
+        "--interactive=false",
+      ],
+      {
+        cwd: projectPath,
+        spinnerText: "Scaffolding Angular application...",
+        env: { NG_CLI_ANALYTICS: "false" },
+      }
+    );
 
     const clientPath = path.join(projectPath, "client");
-
-    const { cmd: twCmd, args: twArgs } = buildInstallCommand(pm, ["tailwindcss", "@tailwindcss/postcss", "postcss", "--force"]);
-    await spawnAsync(twCmd, twArgs, {
-      cwd: clientPath,
-      spinnerText: "Installing Tailwind CSS and PostCSS...",
-    });
 
     const tailwindConfigPath = path.join(clientPath, ".postcssrc.json");
     fs.writeFileSync(
@@ -194,24 +224,30 @@ export async function angularTailwindSetup(projectPath, config, projectName) {
   }
 }
 
-export async function HonoReactSetup(projectPath, config, projectName) {
+export async function HonoReactSetup(projectPath, config, projectName, runtime = {}) {
   logger.info("⚡ Setting up Hono + React...");
 
   const pm = config?.packageManager || "npm";
 
   try {
     const clientTemplate = config?.language === "typescript" ? "react-ts" : "react";
-    const viteCmd = buildViteCreateCommand(pm, "client", clientTemplate);
-    await spawnAsync(viteCmd.cmd, viteCmd.args, {
-      cwd: projectPath,
-      spinnerText: `Creating React client (${clientTemplate})...`,
-    });
+    await (runtime.spawnAsync || spawnAsync)(
+      npmCmd,
+      ["create", "vite@latest", "client", "--", "--template", clientTemplate, "--no-interactive"],
+      {
+        cwd: projectPath,
+        spinnerText: `Creating React client (${clientTemplate})...`,
+      }
+    );
 
-    const honoCmd = buildHonoCreateCommand(pm, "server");
-    await spawnAsync(honoCmd.cmd, honoCmd.args, {
-      cwd: projectPath,
-      spinnerText: "Creating Hono server...",
-    });
+    await (runtime.spawnAsync || spawnAsync)(
+      npmCmd,
+      ["create", "hono@latest", "server", "--", "--template", "cloudflare-workers", "--pm", "npm"],
+      {
+        cwd: projectPath,
+        spinnerText: "Creating Hono server...",
+      }
+    );
 
     logger.info("Created Hono + React Project !");
   } catch (error) {
@@ -257,18 +293,21 @@ export function insertPoweredBadge(lines, badgeLine) {
   return false;
 }
 
-export async function mernSetup(projectPath, config, projectName) {
+export async function mernSetup(projectPath, config, projectName, install = true, runtime = {}) {
   logger.info("⚡ Setting up MERN...");
 
   const pm = config?.packageManager || "npm";
 
   try {
     const clientTemplate = config?.language === "typescript" ? "react-ts" : "react";
-    const viteCmd = buildViteCreateCommand(pm, "client", clientTemplate);
-    await spawnAsync(viteCmd.cmd, viteCmd.args, {
-      cwd: projectPath,
-      spinnerText: `Creating React client with Vite (${clientTemplate})...`,
-    });
+    await (runtime.spawnAsync || spawnAsync)(
+      npmCmd,
+      ["create", "vite@latest", "client", "--", "--template", clientTemplate, "--no-interactive"],
+      {
+        cwd: projectPath,
+        spinnerText: `Creating React client with Vite (${clientTemplate})...`,
+      }
+    );
 
     if (config?.language === "javascript") {
       const appJsxPath = path.join(projectPath, "client", "src", "App.jsx");
@@ -304,7 +343,7 @@ export async function mernSetup(projectPath, config, projectName) {
       }
     }
 
-    await serverSetup(projectPath, config, projectName);
+    await serverSetup(projectPath, config, projectName, install, runtime);
     logger.info("✅ MERN project created successfully!");
   } catch (error) {
     logger.error("❌ Failed to set up MERN");
@@ -312,8 +351,7 @@ export async function mernSetup(projectPath, config, projectName) {
   }
 }
 
-export async function serverSetup(projectPath, config, projectName) {
-  const pm = config?.packageManager || "npm";
+export async function serverSetup(projectPath, config, projectName, install = true, runtime = {}) {
   try {
     const serverDir = path.join(projectPath, "server");
 
@@ -321,21 +359,22 @@ export async function serverSetup(projectPath, config, projectName) {
       fs.mkdirSync(serverDir, { recursive: true });
     }
 
-    const { cmd: initCmd, args: initArgs } = buildInitCommand(pm);
-    await spawnAsync(initCmd, initArgs, {
+    await (runtime.spawnAsync || spawnAsync)(npmCmd, ["init", "-y"], {
       cwd: serverDir,
       spinnerText: "Initializing Express server...",
     });
 
-    await installDependencies(projectPath, config, projectName, true, [
-      "dotenv",
-      "express",
-      "helmet",
-      "mongoose",
-      "cors",
-      "nodemon",
-      "morgan",
-    ]);
+    if (install) {
+      await (runtime.installDependencies || installDependencies)(projectPath, config, projectName, true, [
+        "dotenv",
+        "express",
+        "helmet",
+        "mongoose",
+        "cors",
+        "nodemon",
+        "morgan",
+      ]);
+    }
     logger.info("✅ Server project created successfully!");
   } catch (error) {
     logger.error("❌ Failed to set up server");
@@ -343,8 +382,7 @@ export async function serverSetup(projectPath, config, projectName) {
   }
 }
 
-export async function serverAuthSetup(projectPath, config, projectName) {
-  const pm = config?.packageManager || "npm";
+export async function serverAuthSetup(projectPath, config, projectName, install = true, runtime = {}) {
   try {
     const serverDir = path.join(projectPath, "server");
 
@@ -352,24 +390,25 @@ export async function serverAuthSetup(projectPath, config, projectName) {
       fs.mkdirSync(serverDir, { recursive: true });
     }
 
-    const { cmd: initCmd, args: initArgs } = buildInitCommand(pm);
-    await spawnAsync(initCmd, initArgs, {
+    await (runtime.spawnAsync || spawnAsync)(npmCmd, ["init", "-y"], {
       cwd: serverDir,
       spinnerText: "Initializing Express auth server...",
     });
 
-    await installDependencies(projectPath, config, projectName, true, [
-      "bcrypt",
-      "jsonwebtoken",
-      "cookie-parser",
-      "dotenv",
-      "express",
-      "helmet",
-      "mongoose",
-      "cors",
-      "nodemon",
-      "morgan",
-    ]);
+    if (install) {
+      await (runtime.installDependencies || installDependencies)(projectPath, config, projectName, true, [
+        "bcrypt",
+        "jsonwebtoken",
+        "cookie-parser",
+        "dotenv",
+        "express",
+        "helmet",
+        "mongoose",
+        "cors",
+        "nodemon",
+        "morgan",
+      ]);
+    }
     logger.info("✅ Server Auth project created successfully!");
   } catch (error) {
     logger.error("❌ Failed to set up server auth");
@@ -377,16 +416,9 @@ export async function serverAuthSetup(projectPath, config, projectName) {
   }
 }
 
-export async function mernTailwindSetup(projectPath, config, projectName) {
-  const pm = config?.packageManager || "npm";
+export async function mernTailwindSetup(projectPath, config, projectName, runtime = {}) {
   try {
     const clientPath = path.join(projectPath, "client");
-
-    const { cmd: twCmd, args: twArgs } = buildInstallCommand(pm, ["tailwindcss", "@tailwindcss/vite"]);
-    await spawnAsync(twCmd, twArgs, {
-      cwd: clientPath,
-      spinnerText: "Installing TailwindCSS for Vite...",
-    });
 
     const isJs = config?.language === "javascript";
     const viteConfigPath = isJs
@@ -429,17 +461,19 @@ export async function mernTailwindSetup(projectPath, config, projectName) {
   }
 }
 
-export async function mevnSetup(projectPath, config, projectName) {
-  const pm = config?.packageManager || "npm";
+export async function mevnSetup(projectPath, config, projectName, runtime = {}) {
   try {
     logger.info("⚡ Setting up MEVN...");
 
     const clientTemplate = config?.language === "javascript" ? "vue" : "vue-ts";
-    const viteCmd = buildViteCreateCommand(pm, "client", clientTemplate);
-    await spawnAsync(viteCmd.cmd, viteCmd.args, {
-      cwd: projectPath,
-      spinnerText: `Creating Vue client with Vite (${clientTemplate})...`,
-    });
+    await (runtime.spawnAsync || spawnAsync)(
+      npmCmd,
+      ["create", "vite@latest", "client", "--", "--template", clientTemplate, "--no-interactive"],
+      {
+        cwd: projectPath,
+        spinnerText: `Creating Vue client with Vite (${clientTemplate})...`,
+      }
+    );
 
     const vueJsPath = path.join(projectPath, "client", "src", "components", "HelloWorld.vue");
     if (fs.existsSync(vueJsPath)) {

@@ -20,6 +20,61 @@ export const SUPPORTED_LANGUAGES = [
 ];
 
 /**
+ * Maps each supported stack to the language(s) its templates actually provide.
+ * Single-entry arrays mean the stack ships one fixed-language template only;
+ * two-entry arrays mean the stack has separate javascript/ and typescript/
+ * template variants (see utils/templateManager.js's resolveTemplatePath).
+ */
+export const STACK_LANGUAGES = {
+  "mern": ["typescript"],
+  "mern+tailwind+auth": ["javascript"],
+  "mean": ["javascript"],
+  "mean+tailwind+auth": ["javascript"],
+  "mevn": ["javascript"],
+  "mevn+tailwind+auth": ["javascript", "typescript"],
+  "t3-stack": ["typescript"],
+  "hono": ["javascript", "typescript"],
+};
+
+/**
+ * Returns the language(s) available for a given stack.
+ * Falls back to all supported languages for an unrecognized stack, so
+ * callers still get a sensible list instead of undefined behavior.
+ * @param {string} stack
+ * @returns {string[]}
+ */
+export function getSupportedLanguages(stack) {
+  return STACK_LANGUAGES[stack] || SUPPORTED_LANGUAGES;
+}
+
+/**
+ * Whether a stack offers more than one language variant and therefore
+ * needs an interactive language prompt at all.
+ * @param {string} stack
+ * @returns {boolean}
+ */
+export function stackSupportsMultipleLanguages(stack) {
+  return getSupportedLanguages(stack).length > 1;
+}
+
+/**
+ * Validates that a stack has a template for the requested language.
+ * @param {string} stack
+ * @param {string} language
+ * @returns {{ valid: boolean, error?: string }}
+ */
+export function validateStackLanguage(stack, language) {
+  if (!getSupportedLanguages(stack).includes(language)) {
+    return {
+      valid: false,
+      error: `Language "${language}" is not supported for ${stack}. Supported languages: ${getSupportedLanguages(stack).join(", ")}`,
+    };
+  }
+
+  return { valid: true };
+}
+
+/**
  * Validates a project name against naming rules and path traversal operators.
  * @param {string} name
  * @returns {{ valid: boolean, error?: string }}
@@ -114,6 +169,9 @@ export function validateConfig(config) {
 
   const langResult = validateLanguage(config.language);
   if (!langResult.valid) return langResult;
+
+  const stackLanguageResult = validateStackLanguage(config.stack, config.language);
+  if (!stackLanguageResult.valid) return stackLanguageResult;
 
   return { valid: true };
 }

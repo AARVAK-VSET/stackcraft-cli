@@ -58,6 +58,7 @@
     "start": "node index.js",
     "validate": "node scripts/validate-apis.js",
     "test": "node --test tests/**/*.test.js"
+  
   },
   "devDependencies": {
     "typescript": "^5.9.3"

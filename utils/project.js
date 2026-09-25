@@ -41,6 +41,14 @@ export function assertDestinationAvailable(projectPath, projectName) {
  * @param {{ skipInstall?: boolean, targetDir?: string, silent?: boolean, throwOnError?: boolean }} [options={}]
  */
 export async function setupProject(projectName, config, options = {}) {
+  const operations = options.operations || {};
+  const copy = operations.copyTemplates || copyTemplates;
+  const install = operations.installDependencies || installDependencies;
+  const runtime = {
+    spawnAsync: operations.spawnAsync,
+    installDependencies: install,
+  };
+
   // 1. Pure configuration validation
   const validation = validateConfig({ ...config, projectName });
   if (!validation.valid) {
@@ -91,45 +99,84 @@ export async function setupProject(projectName, config, options = {}) {
 
     // 4. Offline / skipInstall mode (bypasses heavy external package manager calls)
     if (options.skipInstall) {
-      copyTemplates(projectPath, config);
+      copy(projectPath, config);
       return { projectPath, success: true };
     }
 
     // 5. Standard scaffolding & dependency installation
     if (config.stack === "mern+tailwind+auth") {
-      await mernSetup(projectPath, config, projectName);
-      copyTemplates(projectPath, config);
-      await mernTailwindSetup(projectPath, config, projectName);
-      await installDependencies(projectPath, config, projectName);
-      await serverAuthSetup(projectPath, config, projectName);
+      await mernSetup(projectPath, config, projectName, false, runtime);
+      copy(projectPath, config);
+      await mernTailwindSetup(projectPath, config, projectName, runtime);
+      await serverAuthSetup(projectPath, config, projectName, false, runtime);
+      await install(
+        projectPath,
+        config,
+        projectName,
+        true,
+        [
+          "bcrypt",
+          "jsonwebtoken",
+          "cookie-parser",
+          "dotenv",
+          "express",
+          "helmet",
+          "mongoose",
+          "cors",
+          "nodemon",
+          "morgan",
+        ],
+        ["tailwindcss", "@tailwindcss/vite"],
+        runtime
+      );
     } else if (config.stack === "mevn") {
-      await mevnSetup(projectPath, config, projectName);
-      copyTemplates(projectPath, config);
-      await installDependencies(projectPath, config, projectName);
-      await serverSetup(projectPath, config, projectName);
+      await mevnSetup(projectPath, config, projectName, runtime);
+      copy(projectPath, config);
+      await install(projectPath, config, projectName, true, [], [], runtime);
+      await serverSetup(projectPath, config, projectName, false, runtime);
     } else if (config.stack === "mean") {
-      await angularSetup(projectPath, config, projectName);
-      await installDependencies(projectPath, config, projectName);
-      copyTemplates(projectPath, config);
-      await serverSetup(projectPath, config, projectName);
+      await angularSetup(projectPath, config, projectName, runtime);
+      copy(projectPath, config);
+      await serverSetup(projectPath, config, projectName, false, runtime);
+      await install(projectPath, config, projectName, true, [], [], runtime);
     } else if (config.stack === "mean+tailwind+auth") {
-      await angularTailwindSetup(projectPath, config, projectName);
-      await installDependencies(projectPath, config, projectName);
-      copyTemplates(projectPath, config);
+      await angularTailwindSetup(projectPath, config, projectName, runtime);
+      copy(projectPath, config);
+      await serverSetup(projectPath, config, projectName, false, runtime);
+      await install(
+        projectPath,
+        config,
+        projectName,
+        true,
+        [
+          "bcrypt",
+          "jsonwebtoken",
+          "cookie-parser",
+          "dotenv",
+          "express",
+          "helmet",
+          "mongoose",
+          "cors",
+          "nodemon",
+          "morgan",
+        ],
+        ["tailwindcss", "@tailwindcss/postcss", "postcss"],
+        runtime
+      );
     } else if (config.stack === "hono") {
       try {
-        await HonoReactSetup(projectPath, config, projectName);
-        await installDependencies(projectPath, config, projectName, false);
+        await HonoReactSetup(projectPath, config, projectName, runtime);
+        await install(projectPath, config, projectName, true, [], [], runtime);
       } catch {
-        copyTemplates(projectPath, config);
+        copy(projectPath, config);
       }
     } else if (config.stack === "mern") {
-      await mernSetup(projectPath, config, projectName);
-      copyTemplates(projectPath, config);
-      await installDependencies(projectPath, config, projectName, false, []);
+      await mernSetup(projectPath, config, projectName, false, runtime);
+      copy(projectPath, config);
+      await install(projectPath, config, projectName, true, [], [], runtime);
     } else {
-      copyTemplates(projectPath, config);
-      await installDependencies(projectPath, config, projectName);
+      copy(projectPath, config);
+      await install(projectPath, config, projectName, true, [], [], runtime);
     }
 
     // --- Success + Next Steps ---

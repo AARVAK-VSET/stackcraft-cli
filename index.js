@@ -4,8 +4,13 @@ import chalk from "chalk";
 import gradient from "gradient-string";
 import figlet from "figlet";
 import { createProject } from "./commands/scaffold.js";
-import { validateProjectName, validateConfig, SUPPORTED_STACKS } from "./utils/validator.js";
-import { detectPackageManager, SUPPORTED_PACKAGE_MANAGERS } from "./utils/packageManager.js";
+import {
+  validateProjectName,
+  validateConfig,
+  SUPPORTED_STACKS,
+  getSupportedLanguages,
+  stackSupportsMultipleLanguages,
+} from "./utils/validator.js";
 
 function showBanner() {
   console.log(
@@ -65,8 +70,8 @@ function handleFlags(args) {
   }
 }
 
-async function askStackQuestions() {
-  return await inquirer.prompt([
+async function askStackChoice() {
+  const { stack } = await inquirer.prompt([
     {
       type: "list",
       name: "stack",
@@ -84,6 +89,23 @@ async function askStackQuestions() {
       pageSize: 10,
       default: "mern",
     },
+  ]);
+  return stack;
+}
+
+async function askLanguageChoice(stack) {
+  // Single-language stacks (e.g. mern is TypeScript-only, mean is
+  // JavaScript-only) skip the prompt entirely and default to their one
+  // supported language, instead of asking a question whose answer is ignored.
+  if (!stackSupportsMultipleLanguages(stack)) {
+    const [fixedLanguage] = getSupportedLanguages(stack);
+    console.log(
+      chalk.gray(`ℹ️  ${stack} only supports ${fixedLanguage}, so we'll use that.`)
+    );
+    return fixedLanguage;
+  }
+
+  const { language } = await inquirer.prompt([
     {
       type: "list",
       name: "language",
@@ -96,6 +118,7 @@ async function askStackQuestions() {
       default: "typescript",
     },
   ]);
+  return language;
 }
 
 
@@ -154,9 +177,9 @@ async function main() {
       projectName = await askProjectName();
     }
 
-    const stackAnswers = await askStackQuestions();
-    const packageManager = await askPackageManagerQuestion();
-    config = { ...stackAnswers, projectName, packageManager };
+    const stack = await askStackChoice();
+    const language = await askLanguageChoice(stack);
+    config = { stack, language, projectName };
 
     const configValidation = validateConfig(config);
     if (!configValidation.valid) {
