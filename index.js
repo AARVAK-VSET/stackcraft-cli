@@ -121,6 +121,26 @@ async function askLanguageChoice(stack) {
   return language;
 }
 
+
+async function askPackageManagerQuestion() {
+  const detected = detectPackageManager();
+  const { packageManager } = await inquirer.prompt([
+    {
+      type: "list",
+      name: "packageManager",
+      message: "Choose your package manager:",
+      choices: [
+        { name: chalk.bold.red("npm") + "  (Node Package Manager)", value: "npm" },
+        { name: chalk.bold.yellow("pnpm") + " (Performant npm)", value: "pnpm" },
+        { name: chalk.bold.blue("yarn") + " (Yarn Package Manager)", value: "yarn" },
+        { name: chalk.bold.magenta("bun") + "  (Bun JavaScript Runtime)", value: "bun" },
+      ],
+      pageSize: 5,
+      default: detected,
+    },
+  ]);
+  return packageManager;
+}
 async function askProjectName() {
   const { projectName } = await inquirer.prompt([
     {

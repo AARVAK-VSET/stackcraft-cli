@@ -3,6 +3,15 @@ import ora from "ora";
 import path from "path";
 import fs from "fs";
 import { logger } from "./logger.js";
+import {
+  getExecutable,
+  getRunnerCommand,
+  buildInstallCommand,
+  buildInitCommand,
+  buildViteCreateCommand,
+  buildHonoCreateCommand,
+  buildAngularCreateCommand,
+} from "./packageManager.js";
 
 // Active child process tracker for SIGINT / SIGTERM signal handling
 export const activeProcesses = new Set();
@@ -100,6 +109,8 @@ export async function installDependencies(
 ) {
   logger.info("📦 Installing dependencies...");
 
+  const pm = config.packageManager || "npm";
+
   try {
     // Validate package names against shell metacharacters
     const isValidPackage = (pkg) => /^[a-zA-Z0-9\-_\.@^~:]+$/.test(pkg);
@@ -111,7 +122,6 @@ export async function installDependencies(
 
     const clientDir = path.join(projectPath, "client");
     const serverDir = path.join(projectPath, "server");
-    const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
 
     if (fs.existsSync(clientDir)) {
       await (runtime.spawnAsync || spawnAsync)(npmCmd, ["install", ...clientDependencies], {
@@ -135,6 +145,8 @@ export async function installDependencies(
 
 export async function angularSetup(projectPath, config, projectName, runtime = {}) {
   logger.info("⚡ Setting up Angular...");
+
+  const pm = config?.packageManager || "npm";
 
   try {
     const npxCmd = process.platform === "win32" ? "npx.cmd" : "npx";
@@ -168,6 +180,8 @@ export async function angularSetup(projectPath, config, projectName, runtime = {
 
 export async function angularTailwindSetup(projectPath, config, projectName, runtime = {}) {
   logger.info("⚡ Setting up Angular + Tailwind...");
+
+  const pm = config?.packageManager || "npm";
 
   try {
     const npxCmd = process.platform === "win32" ? "npx.cmd" : "npx";
@@ -213,9 +227,9 @@ export async function angularTailwindSetup(projectPath, config, projectName, run
 export async function HonoReactSetup(projectPath, config, projectName, runtime = {}) {
   logger.info("⚡ Setting up Hono + React...");
 
-  try {
-    const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
+  const pm = config?.packageManager || "npm";
 
+  try {
     const clientTemplate = config?.language === "typescript" ? "react-ts" : "react";
     await (runtime.spawnAsync || spawnAsync)(
       npmCmd,
@@ -282,9 +296,9 @@ export function insertPoweredBadge(lines, badgeLine) {
 export async function mernSetup(projectPath, config, projectName, install = true, runtime = {}) {
   logger.info("⚡ Setting up MERN...");
 
-  try {
-    const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
+  const pm = config?.packageManager || "npm";
 
+  try {
     const clientTemplate = config?.language === "typescript" ? "react-ts" : "react";
     await (runtime.spawnAsync || spawnAsync)(
       npmCmd,
@@ -339,7 +353,6 @@ export async function mernSetup(projectPath, config, projectName, install = true
 
 export async function serverSetup(projectPath, config, projectName, install = true, runtime = {}) {
   try {
-    const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
     const serverDir = path.join(projectPath, "server");
 
     if (!fs.existsSync(serverDir)) {
@@ -371,7 +384,6 @@ export async function serverSetup(projectPath, config, projectName, install = tr
 
 export async function serverAuthSetup(projectPath, config, projectName, install = true, runtime = {}) {
   try {
-    const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
     const serverDir = path.join(projectPath, "server");
 
     if (!fs.existsSync(serverDir)) {
@@ -406,7 +418,6 @@ export async function serverAuthSetup(projectPath, config, projectName, install 
 
 export async function mernTailwindSetup(projectPath, config, projectName, runtime = {}) {
   try {
-    const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
     const clientPath = path.join(projectPath, "client");
 
     const isJs = config?.language === "javascript";
@@ -453,7 +464,6 @@ export async function mernTailwindSetup(projectPath, config, projectName, runtim
 export async function mevnSetup(projectPath, config, projectName, runtime = {}) {
   try {
     logger.info("⚡ Setting up MEVN...");
-    const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
 
     const clientTemplate = config?.language === "javascript" ? "vue" : "vue-ts";
     await (runtime.spawnAsync || spawnAsync)(
