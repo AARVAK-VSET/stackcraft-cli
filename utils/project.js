@@ -16,6 +16,7 @@ import {
   angularSetup,
   angularTailwindSetup,
 } from "./installer.js";
+import { buildRunScriptCommand } from "./packageManager.js";
 
 /**
  * Asserts that the target project destination directory is available.
@@ -68,10 +69,12 @@ export async function setupProject(projectName, config, options = {}) {
 
     // --- Pretty Project Config (Boxed) ---
     if (!options.silent && process.env.NODE_ENV !== "test") {
+      const pm = config.packageManager || "npm";
       const configText = `
       ${chalk.bold("🌐 Stack:")}  ${chalk.green(config.stack)}
       ${chalk.bold("📦 Project Name:")}  ${chalk.blue(projectName)}
       ${chalk.bold("📖 Language:")}  ${chalk.red(config.language)}
+      ${chalk.bold("📦 Package Manager:")}  ${chalk.magenta(pm)}
       `;
 
       console.log(
@@ -131,22 +134,27 @@ export async function setupProject(projectName, config, options = {}) {
 
     // --- Success + Next Steps ---
     if (!options.silent && process.env.NODE_ENV !== "test") {
+      const pm = config.packageManager || "npm";
+      const runDev = buildRunScriptCommand(pm, "dev").args.join(" ");
+      const runStart = buildRunScriptCommand(pm, "start").args.join(" ");
+      const pmExe = pm;
+
       console.log(chalk.gray("-------------------------------------------"));
       console.log(`${chalk.greenBright(`✅ Project ${chalk.bold.yellow(`${projectName}`)} created successfully! 🎉`)}`);
       console.log(chalk.gray("-------------------------------------------"));
       console.log(chalk.cyan("👉 Next Steps:\n"));
 
       if (config.stack === "mean" || config.stack === "mean+tailwind+auth") {
-        console.log(`   ${chalk.yellow("cd")} ${projectName}/client && ${chalk.green("npm start")}`);
-        console.log(`   ${chalk.yellow("cd")} ${projectName}/server && ${chalk.green("npm start")}`);
+        console.log(`   ${chalk.yellow("cd")} ${projectName}/client && ${chalk.green(`${pmExe} ${runStart}`)}`);
+        console.log(`   ${chalk.yellow("cd")} ${projectName}/server && ${chalk.green(`${pmExe} ${runStart}`)}`);
       } else if (config.stack === "t3-stack") {
-        console.log(`   ${chalk.yellow("cd")} ${projectName}/t3-app && ${chalk.green("npm run dev")}`);
+        console.log(`   ${chalk.yellow("cd")} ${projectName}/t3-app && ${chalk.green(`${pmExe} ${runDev}`)}`);
       } else if (config.stack === "hono") {
-        console.log(`   ${chalk.yellow("cd")} ${projectName}/client && ${chalk.green("npm run dev")}`);
-        console.log(`   ${chalk.yellow("cd")} ${projectName}/server && ${chalk.green("npm run dev")}`);
+        console.log(`   ${chalk.yellow("cd")} ${projectName}/client && ${chalk.green(`${pmExe} ${runDev}`)}`);
+        console.log(`   ${chalk.yellow("cd")} ${projectName}/server && ${chalk.green(`${pmExe} ${runDev}`)}`);
       } else {
-        console.log(`   ${chalk.yellow("cd")} ${projectName}/client && ${chalk.green("npm run dev")}`);
-        console.log(`   ${chalk.yellow("cd")} ${projectName}/server && ${chalk.green("npm start")}`);
+        console.log(`   ${chalk.yellow("cd")} ${projectName}/client && ${chalk.green(`${pmExe} ${runDev}`)}`);
+        console.log(`   ${chalk.yellow("cd")} ${projectName}/server && ${chalk.green(`${pmExe} ${runStart}`)}`);
       }
 
       console.log(chalk.gray("-------------------------------------------"));

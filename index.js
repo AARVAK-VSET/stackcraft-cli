@@ -5,6 +5,7 @@ import gradient from "gradient-string";
 import figlet from "figlet";
 import { createProject } from "./commands/scaffold.js";
 import { validateProjectName, validateConfig, SUPPORTED_STACKS } from "./utils/validator.js";
+import { detectPackageManager, SUPPORTED_PACKAGE_MANAGERS } from "./utils/packageManager.js";
 
 function showBanner() {
   console.log(
@@ -97,6 +98,26 @@ async function askStackQuestions() {
   ]);
 }
 
+
+async function askPackageManagerQuestion() {
+  const detected = detectPackageManager();
+  const { packageManager } = await inquirer.prompt([
+    {
+      type: "list",
+      name: "packageManager",
+      message: "Choose your package manager:",
+      choices: [
+        { name: chalk.bold.red("npm") + "  (Node Package Manager)", value: "npm" },
+        { name: chalk.bold.yellow("pnpm") + " (Performant npm)", value: "pnpm" },
+        { name: chalk.bold.blue("yarn") + " (Yarn Package Manager)", value: "yarn" },
+        { name: chalk.bold.magenta("bun") + "  (Bun JavaScript Runtime)", value: "bun" },
+      ],
+      pageSize: 5,
+      default: detected,
+    },
+  ]);
+  return packageManager;
+}
 async function askProjectName() {
   const { projectName } = await inquirer.prompt([
     {
@@ -134,7 +155,8 @@ async function main() {
     }
 
     const stackAnswers = await askStackQuestions();
-    config = { ...stackAnswers, projectName };
+    const packageManager = await askPackageManagerQuestion();
+    config = { ...stackAnswers, projectName, packageManager };
 
     const configValidation = validateConfig(config);
     if (!configValidation.valid) {
